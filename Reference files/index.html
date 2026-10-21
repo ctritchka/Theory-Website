@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<meta name="theme-color" content="#f4f2e9">
+		<title>Chord Analysis | Music Theory</title>
+		<link rel="stylesheet" href="styles.css">
+		<script src="app.js" defer></script>
+	</head>
+	<body>
+		<div class="app-shell">
+			<header class="topbar">
+				<div class="lesson-meta">
+					<span class="lesson-label">LISTENING STUDY / 01</span>
+					<span id="lesson-title">Loading score…</span>
+				</div>
+				<span class="topbar-note">MUSIC THEORY <span>•</span> CHORDS</span>
+			</header>
+
+			<main id="lesson" class="lesson" aria-live="polite">
+				<div class="loading-state">Preparing your score<span>…</span></div>
+			</main>
+
+		</div>
+		<audio id="audio-player" preload="auto"></audio>
+		<div id="announcement" class="sr-only" aria-live="assertive"></div>
+	</body>
+</html>

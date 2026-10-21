@@ -1,0 +1,40 @@
+<svg width="60" height="200" viewBox="0 0 60 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_36_3390)">
+<mask id="path-1-outside-1_36_3390" maskUnits="userSpaceOnUse" x="0" y="0" width="60" height="200" fill="black">
+<rect fill="white" width="60" height="200"/>
+<path d="M12 0H48V200H12V0Z"/>
+</mask>
+<path d="M12 0H48V200H12V0Z" fill="white"/>
+<path d="M-384.658 64.1455H284.885" stroke="black" stroke-width="0.7272" stroke-linejoin="bevel"/>
+<path d="M-384.658 70.7598H284.885" stroke="black" stroke-width="0.7272" stroke-linejoin="bevel"/>
+<path d="M-384.658 77.374H284.885" stroke="black" stroke-width="0.7272" stroke-linejoin="bevel"/>
+<path d="M-384.658 83.9878H284.885" stroke="black" stroke-width="0.7272" stroke-linejoin="bevel"/>
+<path d="M-384.658 90.6021H284.885" stroke="black" stroke-width="0.7272" stroke-linejoin="bevel"/>
+<path d="M-384.658 135.929H284.885" stroke="black" stroke-width="0.7272" stroke-linejoin="bevel"/>
+<path d="M-384.658 142.544H284.885" stroke="black" stroke-width="0.7272" stroke-linejoin="bevel"/>
+<path d="M-384.658 149.157H284.885" stroke="black" stroke-width="0.7272" stroke-linejoin="bevel"/>
+<path d="M-384.658 155.771H284.885" stroke="black" stroke-width="0.7272" stroke-linejoin="bevel"/>
+<path d="M-384.658 162.386H284.885" stroke="black" stroke-width="0.7272" stroke-linejoin="bevel"/>
+<path d="M47.9714 63.7822V135.929" stroke="black" stroke-width="1.1904" stroke-linejoin="bevel"/>
+<path d="M47.9714 135.565V162.749" stroke="black" stroke-width="1.1904" stroke-linejoin="bevel"/>
+<path fill-rule="evenodd" clip-rule="evenodd" d="M-19.0613 51.8893C-6.94128 44.1157 17.2995 44.1157 29.4195 51.8893C17.2995 46.2325 -6.94128 46.2325 -19.0613 51.8893Z" fill="black" stroke="black" stroke-width="0.3304" stroke-linecap="round" stroke-linejoin="round"/>
+<path fill-rule="evenodd" clip-rule="evenodd" d="M-24.0215 116.748C-10.0759 108.257 15.1569 111.564 26.4433 123.362C14.8817 113.662 -10.3503 110.355 -24.0215 116.748Z" fill="black" stroke="black" stroke-width="0.3304" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M19.9609 129.315H32.9257" stroke="black" stroke-width="1.0584" stroke-linejoin="bevel"/>
+<path d="M30.4114 73.0083V55.8779" stroke="black" stroke-width="0.6616" stroke-linejoin="bevel"/>
+<path d="M22.4746 85.0991V107.117" stroke="black" stroke-width="0.6616" stroke-linejoin="bevel"/>
+<path d="M22.4746 130.426V150.789" stroke="black" stroke-width="0.6616" stroke-linejoin="bevel"/>
+<path d="M22.1433 75.1798C22.1433 76.3182 22.9649 77.5878 25.1097 77.5878C27.8633 77.5878 30.7497 75.3382 30.7497 73.0078C30.7497 71.4454 29.4249 70.5718 27.7833 70.5718C25.2145 70.5718 22.1433 72.743 22.1433 75.1798Z" fill="black"/>
+<path d="M22.1433 91.7149C22.1433 92.8533 22.9649 94.1237 25.1097 94.1237C27.8633 94.1237 30.7497 91.8733 30.7497 89.5437C30.7497 87.9813 29.4249 87.1069 27.7833 87.1069C25.2145 87.1069 22.1433 89.2789 22.1433 91.7149Z" fill="black"/>
+<path d="M22.1433 85.1004C22.1433 86.2396 22.9649 87.5092 25.1097 87.5092C27.8633 87.5092 30.7497 85.2596 30.7497 82.9292C30.7497 81.3668 29.4249 80.4932 27.7833 80.4932C25.2145 80.4932 22.1433 82.6644 22.1433 85.1004Z" fill="black"/>
+<path d="M22.1433 130.428C22.1433 131.566 22.9649 132.837 25.1097 132.837C27.8633 132.837 30.7497 130.586 30.7497 128.257C30.7497 126.694 29.4249 125.82 27.7833 125.82C25.2145 125.82 22.1433 127.991 22.1433 130.428Z" fill="black"/>
+<path fill-rule="evenodd" clip-rule="evenodd" d="M-20.3838 54.2246H30.7418V57.5318H-20.3838V54.2246Z" fill="black"/>
+<path fill-rule="evenodd" clip-rule="evenodd" d="M-28.3213 102.173L22.8051 105.481V108.795L-28.3213 105.488V102.173Z" fill="black"/>
+<path fill-rule="evenodd" clip-rule="evenodd" d="M-28.3213 145.847L22.8051 149.154V152.467L-28.3213 149.161V145.847Z" fill="black"/>
+</g>
+<path d="M48 0H36V200H48H60V0H48ZM12 200H24V0H12H0V200H12Z" fill="white" mask="url(#path-1-outside-1_36_3390)"/>
+<defs>
+<clipPath id="clip0_36_3390">
+<path d="M12 0H48V200H12V0Z" fill="white"/>
+</clipPath>
+</defs>
+</svg>

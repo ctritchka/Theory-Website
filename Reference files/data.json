@@ -1,0 +1,86 @@
+{
+  "excerptId": "clementi-op36no1-mm1-4",
+  "title": "Sonatina in C Major, Op. 36 No. 1",
+  "composer": "Muzio Clementi",
+  "fullExcerptAudio": "assets/audio/Full exerpt.mp3",
+  "fullExcerptImage": "assets/scores/SVG Clementi.svg",
+  "totalMeasures": 4,
+  "measures": [
+    {
+      "measureNumber": 1,
+      "audioSnippet": "assets/audio/measures/Clementi measure 1.mp3",
+      "imageSnippet": "assets/scores/m1.svg",
+      "correctChord": "I",
+      "correctImage": "assets/shapes/Tonic.svg",
+      "optionsArray": ["I", "V", "IV"],
+      "optionsImages": ["assets/shapes/Tonic.svg", "assets/shapes/Dominant.svg", "assets/shapes/Subdominant.svg"],
+      "hasKeyChange": true,
+      "hint1Data": {
+        "rootNoteHighlight": "assets/scores/m1 rootHighlight.svg",
+        "base_note_audio": "assets/audio/notes/C.mp3"
+      },
+      "hint2Data": {
+        "chordNotesHighlight": "assets/scores/m1 chordHighlight.svg",
+        "trebleClefRootImage": "assets/scores/I chord.svg",
+        "chord_audio": "assets/audio/chords/C chord.mp3"
+      }
+    },
+    {
+      "measureNumber": 2,
+      "audioSnippet": "assets/audio/measures/Clementi measure 2.mp3",
+      "imageSnippet": "assets/scores/m2.svg",
+      "correctChord": "I",
+      "correctImage": "assets/shapes/Tonic.svg",
+      "optionsImages": ["assets/shapes/Tonic.svg", "assets/shapes/Dominant.svg", "assets/shapes/Subdominant.svg"],
+      "optionsArray": ["I", "V", "IV"],
+      "hasKeyChange": false,
+      "hint1Data": {
+        "rootNoteHighlight": "assets/scores/m2 rootHighlight.svg",
+        "base_note_audio": "assets/audio/notes/C.mp3"
+      },
+      "hint2Data": {
+        "chordNotesHighlight": "assets/scores/m2 chordHighlight.svg",
+        "trebleClefRootImage": "assets/scores/I chord.svg",
+        "chord_audio": "assets/audio/chords/C chord.mp3"
+      }
+    },
+    {
+      "measureNumber": 3,
+      "audioSnippet": "assets/audio/measures/Clementi measure 3.mp3",
+      "imageSnippet": "assets/scores/m3.svg",
+      "correctChord": "IV",
+      "correctImage": "assets/shapes/Subdominant.svg",
+      "optionsImages": ["assets/shapes/Tonic.svg", "assets/shapes/Dominant.svg", "assets/shapes/Subdominant.svg"],
+      "optionsArray": ["I", "V", "IV"],
+      "hasKeyChange": true,
+      "hint1Data": {
+        "rootNoteHighlight": "assets/scores/m3 rootHighlight.svg",
+        "base_note_audio": "assets/audio/notes/F.mp3"
+      },
+      "hint2Data": {
+        "chordNotesHighlight": "assets/scores/m3 chordHighlight.svg",
+        "trebleClefRootImage": "assets/scores/IV chord.svg",
+        "chord_audio": "assets/audio/chords/F chord.mp3"
+      }
+    },
+    {
+      "measureNumber": 4,
+      "audioSnippet": "assets/audio/measures/Clementi measure 4.mp3",
+      "imageSnippet": "assets/scores/m4.svg",
+      "correctChord": "V",
+      "correctImage": "assets/shapes/Dominant.svg",
+      "optionsImages": ["assets/shapes/Tonic.svg", "assets/shapes/Dominant.svg", "assets/shapes/Subdominant.svg"],
+      "optionsArray": ["I", "V", "IV"],
+      "hasKeyChange": true,
+      "hint1Data": {
+        "rootNoteHighlight": "assets/scores/m4 rootHighlight.svg",
+        "base_note_audio": "assets/audio/notes/G.mp3"
+      },
+      "hint2Data": {
+        "chordNotesHighlight": "assets/scores/m4 chordHighlight.svg",
+        "trebleClefRootImage": "assets/scores/V chord.svg",
+        "chord_audio": "assets/audio/chords/G chord.mp3"
+      }
+    }
+  ]
+}

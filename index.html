@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Harmony Practice</title>
+    <link rel="stylesheet" href="app.css">
+    <script src="curriculum.js" defer></script>
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div class="piece-heading">
+          <p id="section-title" class="section-title"></p>
+          <h1 id="piece-title">Harmony Practice</h1>
+          <p id="piece-composer"></p>
+        </div>
+        <button id="home-button" class="home-button" type="button" hidden>Home</button>
+      </header>
+
+      <div class="lesson-meta">
+        <p id="progress" class="muted"></p>
+        <nav id="phase-progress" aria-label="Lesson progress"></nav>
+      </div>
+      <section id="stage-content" aria-live="polite"></section>
+      <p id="status" role="status"></p>
+    </main>
+  </body>
+</html>
