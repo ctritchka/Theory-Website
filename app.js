@@ -283,48 +283,35 @@ function shapeImage(numeral, alt = "") {
 function renderChoiceButtons(chords) {
   const choices = document.createElement("div");
   choices.className = "choice-grid";
-  const families = [
-    { name: "Tonic", numerals: ["I", "vi", "iii"] },
-    { name: "Dominant", numerals: ["V", "vii°"] },
-    { name: "Subdominant", numerals: ["IV", "ii"] }
-  ];
-  families.forEach((family) => {
-    const availableChords = family.numerals.filter((numeral) => chords.includes(numeral));
-    if (!availableChords.length) return;
-    const group = document.createElement("div");
-    group.className = `choice-family choice-family-${family.name.toLowerCase()}`;
-    group.setAttribute("role", "group");
-    group.setAttribute("aria-label", `${family.name} function chords`);
-    availableChords.forEach((numeral) => {
-      const chord = CHORDS[numeral];
-      const button = makeButton("", () => {}, "choice-button");
-      if (numeral === availableChords[0]) button.classList.add("family-start");
-      button.dataset.answer = numeral;
-      button.setAttribute("aria-label", `Choose chord ${chord.label}`);
-      if (wrongSelections[eventIndex]?.includes(numeral)) {
-        button.disabled = true;
-        button.classList.add("is-wrong");
-      }
-      const art = document.createElement("span");
-      art.className = "choice-art";
-      art.append(shapeImage(numeral, `${chord.function} shape`));
-      const label = document.createElement("span");
-      label.className = "choice-function";
-      label.textContent = chord.function;
-      const numeralLabel = document.createElement("span");
-      numeralLabel.className = "choice-numeral";
-      numeralLabel.textContent = chord.label;
-      button.append(art, numeralLabel, label);
-      if (wrongSelections[eventIndex]?.includes(numeral)) {
-        const wrongLabel = document.createElement("span");
-        wrongLabel.className = "wrong-choice-label";
-        wrongLabel.textContent = "× not this one";
-        button.append(wrongLabel);
-        button.setAttribute("aria-label", `Chord ${chord.label}, not this one`);
-      }
-      group.append(button);
-    });
-    choices.append(group);
+  const numeralOrder = ["I", "ii", "iii", "IV", "V", "vi", "vii°"];
+  numeralOrder.filter((numeral) => chords.includes(numeral)).forEach((numeral) => {
+    const chord = CHORDS[numeral];
+    const button = makeButton("", () => {}, "choice-button");
+    button.dataset.answer = numeral;
+    button.setAttribute("aria-label", `Choose chord ${chord.label}`);
+    if (wrongSelections[eventIndex]?.includes(numeral)) {
+      button.disabled = true;
+      button.classList.add("is-wrong");
+      button.title = "not this one";
+    }
+    const art = document.createElement("span");
+    art.className = "choice-art";
+    art.append(shapeImage(numeral, `${chord.function} shape`));
+    const label = document.createElement("span");
+    label.className = "choice-function";
+    label.textContent = chord.function;
+    const numeralLabel = document.createElement("span");
+    numeralLabel.className = "choice-numeral";
+    numeralLabel.textContent = chord.label;
+    button.append(art, numeralLabel, label);
+    if (wrongSelections[eventIndex]?.includes(numeral)) {
+      const wrongLabel = document.createElement("span");
+      wrongLabel.className = "wrong-choice-label";
+      wrongLabel.textContent = "× not this one";
+      button.append(wrongLabel);
+      button.setAttribute("aria-label", `Chord ${chord.label}, not this one`);
+    }
+    choices.append(button);
   });
   return choices;
 }
@@ -358,13 +345,11 @@ function renderPieceControls() {
     }));
     controls.append(makeButton("Identify", beginMeasures, "text-action"));
   } else if (stage === "measures") {
-    controls.append(makeButton("Play Tonic", () => {
-      playAudio(CHORDS.I.audio, "Tonic chord");
-    }, "text-action"));
     controls.append(makeIconButton("▶", "Play measure", playCurrentMeasure));
-    controls.append(makeIconButton("↻", "Replay excerpt", () => {
-      playAudio(currentPiece().fullAudio, `${currentPiece().title} full piece`);
+    controls.append(makeIconButton("♪", "Play Tonic", () => {
+      playAudio(CHORDS.I.audio, "Tonic chord");
     }));
+    controls.lastElementChild.classList.add("secondary-control");
   } else if (stage === "piece-review") {
     controls.append(makeIconButton("↻", "Replay excerpt", () => {
       completionVisible = false;
@@ -430,10 +415,27 @@ function measureScorePath(event) {
   return `${piece.scoreFolder}${event.measure}.svg`;
 }
 
+function createStripClef() {
+  const clef = document.createElement("div");
+  clef.className = "strip-clef";
+  clef.setAttribute("aria-hidden", "true");
+  const trebleClef = document.createElement("span");
+  trebleClef.textContent = "𝄞";
+  const bassClef = document.createElement("span");
+  bassClef.textContent = "𝄢";
+  clef.append(trebleClef, bassClef);
+  return clef;
+}
+
 function renderScoreSequence() {
   const piece = currentPiece();
   const sequence = document.createElement("div");
   sequence.className = "score-sequence";
+  sequence.append(createStripClef());
+  const startSpace = document.createElement("span");
+  startSpace.className = "strip-start-space";
+  startSpace.setAttribute("aria-hidden", "true");
+  sequence.append(startSpace);
   const groupedEvents = [];
   piece.events.forEach((event, index) => {
     let group = groupedEvents.find((candidate) => candidate.measure === event.measure);
@@ -443,7 +445,7 @@ function renderScoreSequence() {
     }
     group.indices.push(index);
   });
-  groupedEvents.forEach((group) => {
+  groupedEvents.forEach((group, groupIndex) => {
     const { event, indices } = group;
     const item = document.createElement("div");
     const isCurrent = indices.includes(eventIndex);
@@ -453,10 +455,12 @@ function renderScoreSequence() {
     }).filter(Boolean);
     const isComplete = answered.length === indices.length;
     item.className = `measure-tile${isCurrent ? " is-active" : " is-muted"}${isComplete ? " is-complete is-done" : ""}`;
+    item.dataset.measureId = event.measure;
+    item.dataset.measureIndex = String(groupIndex + 1);
     item.setAttribute("aria-label", `Measure ${event.measure}${isCurrent ? ", active" : isComplete ? ", complete" : ", up next"}`);
     const label = document.createElement("span");
     label.className = "measure-label";
-    label.textContent = `M${event.measure.replace(/^m/i, "")}`;
+    label.textContent = `Chord ${groupIndex + 1} of ${groupedEvents.length}`;
     const tileScore = document.createElement("div");
     tileScore.className = "tile-score";
     let scorePath = measureScorePath(event);
@@ -513,6 +517,10 @@ function renderScoreSequence() {
     item.append(tileStatus);
     sequence.append(item);
   });
+  const endSpace = document.createElement("span");
+  endSpace.className = "strip-end-space";
+  endSpace.setAttribute("aria-hidden", "true");
+  sequence.append(endSpace);
   return sequence;
 }
 
@@ -534,7 +542,8 @@ function renderMeasures() {
     const prompt = document.createElement("p");
     prompt.className = "question-prompt";
     prompt.textContent = "What function do you hear?";
-    const choices = renderChoiceButtons(piece.choices);
+    const introducedChords = new Set(SECTIONS.slice(0, sectionIndex + 1).flatMap((section) => section.numerals));
+    const choices = renderChoiceButtons(piece.choices.filter((numeral) => introducedChords.has(numeral)));
     const hintControls = document.createElement("div");
     hintControls.className = "hint-controls";
     const hintButton = makeButton("", () => {
@@ -563,35 +572,44 @@ function renderMeasures() {
     hintControls.append(hintMessage);
     updateHintControl(hintButton);
     current.append(prompt, choices, hintControls);
-
     const feedback = document.createElement("p");
     feedback.id = "answer-feedback";
     feedback.className = "answer-feedback";
     feedback.setAttribute("aria-live", "polite");
-    current.append(feedback);
     const hearChosenButton = makeButton("Hear what you chose", () => {
-      const selectedChord = CHORDS[current.dataset.lastWrongChoice];
+      const selectedChord = CHORDS[stageContent.dataset.lastWrongChoice];
       if (selectedChord?.audio) playAudio(selectedChord.audio, `${selectedChord.label} chord`);
     }, "text-action hear-chosen-button");
     hearChosenButton.hidden = true;
-    current.append(hearChosenButton);
     const revealFeedback = document.createElement("p");
     revealFeedback.className = "reveal-feedback";
     revealFeedback.setAttribute("aria-live", "polite");
-    current.append(revealFeedback);
     const continueButton = makeButton("Continue", advanceMeasure, "primary-action reveal-continue");
     continueButton.hidden = true;
-    current.append(continueButton);
+    const feedbackRow = document.createElement("div");
+    feedbackRow.className = "feedback-row";
+    const feedbackActions = document.createElement("div");
+    feedbackActions.className = "feedback-actions";
+    feedbackActions.append(hearChosenButton, continueButton);
+    feedbackRow.append(feedback, revealFeedback, feedbackActions);
+    current.append(feedbackRow);
     popupPanel = document.createElement("div");
     popupPanel.className = "chord-popup-panel";
     popupPanel.hidden = true;
+    current.append(popupPanel);
     current.querySelectorAll("[data-answer]").forEach((button) => {
-      button.addEventListener("click", () => checkAnswer(button.dataset.answer, event, current));
+      button.addEventListener("click", () => checkAnswer(button.dataset.answer, event, stageContent));
     });
   }
 
   stageContent.replaceChildren(controls, current, sequence);
-  if (popupPanel) stageContent.append(popupPanel);
+  if (isInteractive(event)) {
+    const activeTile = sequence.querySelector(".measure-tile.is-active");
+    const prompt = current.querySelector(".question-prompt");
+    const choices = current.querySelector(".choice-grid");
+    const hintControls = current.querySelector(".hint-controls");
+    if (activeTile) activeTile.append(prompt, choices, hintControls, popupPanel);
+  }
   updateHintControl(stageContent.querySelector(".hint-button"));
   centerActiveMeasure(sequence);
 }
@@ -656,37 +674,7 @@ function showChordPopup(chord, panel) {
   const popup = image(chord.popup, `${chord.label} chord tones`, "hint-popup");
   frame.append(popup);
   panel.append(heading, frame);
-  positionHintPanel(panel);
 }
-
-function positionHintPanel(panel) {
-  const activeTile = stageContent.querySelector(".measure-tile.is-active");
-  if (!activeTile) return;
-  const stageRect = stageContent.getBoundingClientRect();
-  const tileRect = activeTile.getBoundingClientRect();
-  const panelWidth = panel.offsetWidth;
-  const panelHeight = panel.offsetHeight;
-  const styles = getComputedStyle(stageContent);
-  const popupGap = Number.parseFloat(styles.getPropertyValue("--practice-popup-gap"));
-  const popupAnchorOffset = Number.parseFloat(styles.getPropertyValue("--practice-popup-anchor-offset"));
-  let left = tileRect.right - stageRect.left + popupGap;
-  if (left + panelWidth > stageContent.clientWidth) {
-    left = tileRect.left - stageRect.left - panelWidth - popupGap;
-  }
-  left = Math.max(0, Math.min(left, stageContent.clientWidth - panelWidth));
-  let top = tileRect.top - stageRect.top + popupAnchorOffset;
-  if (top + panelHeight > stageContent.clientHeight) {
-    top = tileRect.bottom - stageRect.top - panelHeight - popupGap;
-  }
-  top = Math.max(0, Math.min(top, stageContent.clientHeight - panelHeight));
-  panel.style.left = `${left}px`;
-  panel.style.top = `${top}px`;
-}
-
-window.addEventListener("resize", () => {
-  const panel = stageContent.querySelector(".chord-popup-panel");
-  if (panel && !panel.hidden) positionHintPanel(panel);
-});
 
 function createMasteryBadge(mastery) {
   const badge = document.createElement("span");
@@ -766,6 +754,7 @@ function checkAnswer(selected, event, container) {
     selectedButton.disabled = true;
     selectedButton.classList.add("is-wrong");
     selectedButton.setAttribute("aria-label", `Chord ${CHORDS[selected].label}, not this one`);
+    selectedButton.title = "not this one";
     const wrongLabel = document.createElement("span");
     wrongLabel.className = "wrong-choice-label";
     wrongLabel.textContent = "× not this one";
@@ -888,10 +877,11 @@ async function animateShapeToChordNotes(answerButton, numeral, event) {
 function renderScoreSequenceForCurrent() {
   const existing = stageContent.querySelector(".score-sequence");
   if (!existing) return;
-  const scrollLeft = existing.scrollLeft;
+  const activeControls = [...existing.querySelectorAll(".question-prompt, .choice-grid, .hint-controls, .chord-popup-panel")];
   const sequence = renderScoreSequence();
   existing.replaceWith(sequence);
-  sequence.scrollLeft = scrollLeft;
+  const activeTile = sequence.querySelector(".measure-tile.is-active");
+  if (activeTile) activeTile.append(...activeControls);
   centerActiveMeasure(sequence);
 }
 
@@ -899,11 +889,21 @@ function centerActiveMeasure(sequence) {
   const center = () => {
     const activeTile = sequence.querySelector(".measure-tile.is-active");
     if (!activeTile) return;
+    const clef = sequence.querySelector(".strip-clef");
+    const startSpace = sequence.querySelector(".strip-start-space");
+    const endSpace = sequence.querySelector(".strip-end-space");
+    const clefWidth = clef?.getBoundingClientRect().width || 0;
+    const availableWidth = Math.max(0, sequence.clientWidth - clefWidth);
+    const targetLeft = clefWidth + Math.max(0, (availableWidth - activeTile.clientWidth) / 2);
+    if (startSpace) startSpace.style.flexBasis = `${Math.max(0, targetLeft - clefWidth)}px`;
+    if (endSpace) endSpace.style.flexBasis = `${Math.max(0, availableWidth - (targetLeft - clefWidth) - activeTile.clientWidth)}px`;
     const tileRect = activeTile.getBoundingClientRect();
     const sequenceRect = sequence.getBoundingClientRect();
-    const centeredLeft = sequence.scrollLeft + tileRect.left - sequenceRect.left
-      - (sequence.clientWidth - activeTile.clientWidth) / 2;
-    sequence.scrollLeft = Math.max(0, centeredLeft);
+    const centeredLeft = sequence.scrollLeft + tileRect.left - sequenceRect.left - targetLeft;
+    sequence.scrollTo({
+      left: Math.max(0, centeredLeft),
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth"
+    });
   };
   center();
   const pendingImages = [...sequence.querySelectorAll("img.score")].filter((score) => !score.complete);
@@ -940,6 +940,11 @@ function renderPieceReview() {
   const piece = currentPiece();
   const sequence = document.createElement("div");
   sequence.className = "score-sequence review-sequence";
+  sequence.append(createStripClef());
+  const startSpace = document.createElement("span");
+  startSpace.className = "strip-start-space";
+  startSpace.setAttribute("aria-hidden", "true");
+  sequence.append(startSpace);
   const groupedEvents = [];
   piece.events.forEach((event, index) => {
     let group = groupedEvents.find((candidate) => candidate.measure === event.measure);
@@ -949,13 +954,15 @@ function renderPieceReview() {
     }
     group.indices.push(index);
   });
-  groupedEvents.forEach((group) => {
+  groupedEvents.forEach((group, groupIndex) => {
     const { event, indices } = group;
     const item = document.createElement("div");
     item.className = "measure-tile review-measure is-complete";
+    item.dataset.measureId = event.measure;
+    item.dataset.measureIndex = String(groupIndex + 1);
     const label = document.createElement("span");
     label.className = "measure-label";
-    label.textContent = `M${event.measure.replace(/^m/i, "")}`;
+    label.textContent = `Chord ${groupIndex + 1} of ${groupedEvents.length}`;
     const tileScore = document.createElement("div");
     tileScore.className = "tile-score";
     tileScore.append(image(measureScorePath(event), `${piece.title}, ${event.measure}`));
@@ -975,6 +982,10 @@ function renderPieceReview() {
     item.append(masteryBadgesFor(indices));
     sequence.append(item);
   });
+  const endSpace = document.createElement("span");
+  endSpace.className = "strip-end-space";
+  endSpace.setAttribute("aria-hidden", "true");
+  sequence.append(endSpace);
   const controls = renderPieceControls();
   stageContent.replaceChildren(controls, sequence);
   if (completionVisible) stageContent.append(renderCompletionOverlay());
@@ -1061,4 +1072,9 @@ function render() {
 }
 
 homeButton.addEventListener("click", returnToHome);
+window.addEventListener("resize", () => {
+  if (stage !== "measures") return;
+  const sequence = stageContent.querySelector(".score-sequence");
+  if (sequence) centerActiveMeasure(sequence);
+});
 render();
