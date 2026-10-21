@@ -11,18 +11,19 @@
   <body>
     <main>
       <header>
-        <div class="piece-heading">
-          <p id="section-title" class="section-title"></p>
-          <h1 id="piece-title">Harmony Practice</h1>
-          <p id="piece-composer"></p>
-        </div>
         <button id="home-button" class="home-button" type="button" hidden>Home</button>
+        <div class="header-content">
+          <p id="progress" class="progress-label"></p>
+          <div class="piece-heading">
+            <div class="work-details">
+              <h1 id="piece-title">Harmony Practice</h1>
+              <p id="piece-composer"></p>
+            </div>
+            <nav id="phase-progress" aria-label="Current lesson phase"></nav>
+          </div>
+        </div>
       </header>
 
-      <div class="lesson-meta">
-        <p id="progress" class="muted"></p>
-        <nav id="phase-progress" aria-label="Lesson progress"></nav>
-      </div>
       <section id="stage-content" aria-live="polite"></section>
       <p id="status" role="status"></p>
     </main>

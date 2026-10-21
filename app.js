@@ -3,9 +3,11 @@ const progress = document.querySelector("#progress");
 const status = document.querySelector("#status");
 const pieceTitle = document.querySelector("#piece-title");
 const pieceComposer = document.querySelector("#piece-composer");
-const sectionTitle = document.querySelector("#section-title");
 const phaseProgress = document.querySelector("#phase-progress");
 const homeButton = document.querySelector("#home-button");
+
+const MAX_WRONG_BEFORE_REVEAL = 3;
+const HINT_LEVELS = 2;
 
 let sectionIndex = 0;
 let pieceIndex = 0;
@@ -18,6 +20,9 @@ let usedHint = false;
 let activeHintLevel = 0;
 let answers = [];
 let firstTryCorrect = [];
+let masteryStates = [];
+let wrongSelections = [];
+let answerRevealed = false;
 let activeAudio;
 let autoplayFullPiece = false;
 let autoplayReview = false;
@@ -25,9 +30,9 @@ let answerAdvanceTimer;
 let completionVisible = false;
 let audioVolume = 0.75;
 let curriculumComplete = false;
+let answerCelebrating = false;
 const preloadedAudio = new Map();
 
-const phaseNames = ["Listen", "Identify", "Review"];
 const localFileAudioMessage = "Audio playback needs a local web server. See README.md for the start command.";
 
 function assetUrl(path) {
@@ -109,8 +114,12 @@ function resetPiece() {
   wrongAnswers = 0;
   usedHint = false;
   activeHintLevel = 0;
+  answerCelebrating = false;
   answers = [];
   firstTryCorrect = [];
+  masteryStates = [];
+  wrongSelections = [];
+  answerRevealed = false;
   completionVisible = false;
 }
 
@@ -124,29 +133,23 @@ function setStage(nextStage) {
 function renderProgress() {
   const piece = currentPiece();
   const atPiece = !["home", "introduction"].includes(stage);
-  sectionTitle.textContent = stage === "home" ? "" : `Section ${sectionIndex + 1}`;
-  sectionTitle.hidden = stage === "home";
+  stageContent.classList.toggle("is-practice", stage === "measures");
   pieceTitle.textContent = stage === "home" ? "Harmony Practice" : stage === "introduction" ? "" : piece.workTitle;
   pieceTitle.hidden = stage === "introduction";
   pieceComposer.textContent = stage === "home" || stage === "introduction" ? "" : piece.composer;
   progress.textContent = stage === "home"
     ? ""
-    : `Section ${sectionIndex + 1} · Piece ${pieceIndex + 1} of ${currentSection().pieces.length}`;
+    : stage === "introduction"
+      ? `Section ${sectionIndex + 1}: Chord introduction`
+      : `Section ${sectionIndex + 1}: Piece ${pieceIndex + 1} of ${currentSection().pieces.length}`;
   homeButton.hidden = stage === "home";
-  const activePhase = stage === "piece-preview" ? 0 : stage === "measures" ? 1 : stage === "piece-review" ? 2 : -1;
   phaseProgress.replaceChildren();
   phaseProgress.hidden = !atPiece;
   if (atPiece) {
-    phaseNames.forEach((name, index) => {
-      const phase = document.createElement("span");
-      phase.className = `phase-step${index === activePhase ? " is-current" : index < activePhase ? " is-done" : ""}`;
-      const number = document.createElement("b");
-      number.textContent = String(index + 1);
-      const label = document.createElement("span");
-      label.textContent = name;
-      phase.append(number, label);
-      phaseProgress.append(phase);
-    });
+    const label = document.createElement("span");
+    label.className = "phase-mode";
+    label.textContent = stage === "piece-preview" ? "Listen" : stage === "measures" ? "Practice" : "Review";
+    phaseProgress.append(label);
   }
 }
 
@@ -224,6 +227,7 @@ function renderChordIntroduction() {
     intro.classList.add("is-revealed");
     renderChordVisual(chord, intro.querySelector(".intro-chord-visual"));
     intro.querySelector(".intro-next").hidden = false;
+    playAudio(chord.audio, `${chord.label} chord`);
   }, "intro-shape-button");
   shapeButton.setAttribute("aria-label", `Reveal ${chord.function} chord`);
   shapeButton.append(image(`shapes/${chord.shape}`, `${chord.function} shape`, "intro-shape"));
@@ -288,14 +292,19 @@ function renderChoiceButtons(chords) {
     const availableChords = family.numerals.filter((numeral) => chords.includes(numeral));
     if (!availableChords.length) return;
     const group = document.createElement("div");
-    group.className = "choice-family";
+    group.className = `choice-family choice-family-${family.name.toLowerCase()}`;
     group.setAttribute("role", "group");
     group.setAttribute("aria-label", `${family.name} function chords`);
     availableChords.forEach((numeral) => {
       const chord = CHORDS[numeral];
       const button = makeButton("", () => {}, "choice-button");
+      if (numeral === availableChords[0]) button.classList.add("family-start");
       button.dataset.answer = numeral;
       button.setAttribute("aria-label", `Choose chord ${chord.label}`);
+      if (wrongSelections[eventIndex]?.includes(numeral)) {
+        button.disabled = true;
+        button.classList.add("is-wrong");
+      }
       const art = document.createElement("span");
       art.className = "choice-art";
       art.append(shapeImage(numeral, `${chord.function} shape`));
@@ -306,6 +315,13 @@ function renderChoiceButtons(chords) {
       numeralLabel.className = "choice-numeral";
       numeralLabel.textContent = chord.label;
       button.append(art, numeralLabel, label);
+      if (wrongSelections[eventIndex]?.includes(numeral)) {
+        const wrongLabel = document.createElement("span");
+        wrongLabel.className = "wrong-choice-label";
+        wrongLabel.textContent = "× not this one";
+        button.append(wrongLabel);
+        button.setAttribute("aria-label", `Chord ${chord.label}, not this one`);
+      }
       group.append(button);
     });
     choices.append(group);
@@ -436,8 +452,8 @@ function renderScoreSequence() {
       return answers[answerIndex] || (!isInteractive(groupedEvent) ? groupedEvent.chord : "");
     }).filter(Boolean);
     const isComplete = answered.length === indices.length;
-    item.className = `measure-tile${isCurrent ? " is-active" : " is-muted"}${isComplete ? " is-complete" : ""}`;
-    item.setAttribute("aria-label", `Measure ${event.measure}${isCurrent ? ", active" : isComplete ? ", identified" : ", up next"}`);
+    item.className = `measure-tile${isCurrent ? " is-active" : " is-muted"}${isComplete ? " is-complete is-done" : ""}`;
+    item.setAttribute("aria-label", `Measure ${event.measure}${isCurrent ? ", active" : isComplete ? ", complete" : ", up next"}`);
     const label = document.createElement("span");
     label.className = "measure-label";
     label.textContent = `M${event.measure.replace(/^m/i, "")}`;
@@ -448,7 +464,11 @@ function renderScoreSequence() {
       const hintType = activeHintLevel === 1 ? "root note" : "chord note";
       scorePath = `scores/${hintType} highlight/Section ${sectionIndex + 1}/${piece.title}/${event.measure}.svg`;
     }
+    if (isCurrent && answerCelebrating) {
+      scorePath = `scores/chord note highlight/Section ${sectionIndex + 1}/${piece.title}/${event.measure}.svg`;
+    }
     const score = image(scorePath, `${piece.title}, ${event.measure}${isCurrent && activeHintLevel ? `, hint ${activeHintLevel}` : ""}`);
+    if (isCurrent && activeHintLevel === HINT_LEVELS) score.classList.add("has-chord-note-halos");
     if (isCurrent && activeHintLevel > 0) {
       score.addEventListener("error", () => {
         score.src = assetUrl(measureScorePath(event));
@@ -480,7 +500,16 @@ function renderScoreSequence() {
     item.append(label, tileScore);
     const tileStatus = document.createElement("span");
     tileStatus.className = `tile-result${isCurrent ? " is-live" : ""}`;
-    tileStatus.textContent = isCurrent ? "YOUR TURN" : isComplete ? "IDENTIFIED" : "UP NEXT";
+    if (isComplete) {
+      const measureMastery = [...new Set(indices.map((answerIndex) => masteryStates[answerIndex]).filter(Boolean))];
+      if (measureMastery.length) {
+        measureMastery.forEach((mastery) => tileStatus.append(createMasteryBadge(mastery)));
+      } else {
+        tileStatus.textContent = "GIVEN";
+      }
+    } else {
+      tileStatus.textContent = isCurrent ? "YOUR TURN" : "UP NEXT";
+    }
     item.append(tileStatus);
     sequence.append(item);
   });
@@ -494,6 +523,7 @@ function renderMeasures() {
   const controls = renderPieceControls();
   const current = document.createElement("section");
   current.className = "current-measure";
+  let popupPanel;
 
   if (!isInteractive(event)) {
     const given = document.createElement("p");
@@ -505,47 +535,105 @@ function renderMeasures() {
     prompt.className = "question-prompt";
     prompt.textContent = "What function do you hear?";
     const choices = renderChoiceButtons(piece.choices);
-    const hintButton = makeButton("Hint 1/2", () => {
-      if (activeHintLevel < 2) showHint(activeHintLevel + 1);
+    const hintControls = document.createElement("div");
+    hintControls.className = "hint-controls";
+    const hintButton = makeButton("", () => {
+      if (activeHintLevel < HINT_LEVELS) showHint(activeHintLevel + 1, "user");
     }, "hint-button");
-    hintButton.setAttribute("aria-label", "Show hint 1 of 2");
-    choices.append(hintButton);
-    current.append(prompt, choices);
+    const hintIcon = document.createElement("span");
+    hintIcon.className = "hint-icon";
+    hintIcon.setAttribute("aria-hidden", "true");
+    hintIcon.textContent = "?";
+    const hintLabel = document.createElement("span");
+    hintLabel.className = "hint-label";
+    const hintDots = document.createElement("span");
+    hintDots.className = "hint-dots";
+    hintDots.setAttribute("aria-hidden", "true");
+    for (let level = 1; level <= HINT_LEVELS; level += 1) {
+      const dot = document.createElement("span");
+      dot.className = "hint-dot";
+      dot.dataset.level = String(level);
+      hintDots.append(dot);
+    }
+    hintButton.append(hintIcon, hintLabel, hintDots);
+    hintControls.append(hintButton);
+    const hintMessage = document.createElement("p");
+    hintMessage.className = "hint-message";
+    hintMessage.setAttribute("aria-live", "polite");
+    hintControls.append(hintMessage);
+    updateHintControl(hintButton);
+    current.append(prompt, choices, hintControls);
 
     const feedback = document.createElement("p");
     feedback.id = "answer-feedback";
     feedback.className = "answer-feedback";
+    feedback.setAttribute("aria-live", "polite");
     current.append(feedback);
-    const popupPanel = document.createElement("div");
+    const hearChosenButton = makeButton("Hear what you chose", () => {
+      const selectedChord = CHORDS[current.dataset.lastWrongChoice];
+      if (selectedChord?.audio) playAudio(selectedChord.audio, `${selectedChord.label} chord`);
+    }, "text-action hear-chosen-button");
+    hearChosenButton.hidden = true;
+    current.append(hearChosenButton);
+    const revealFeedback = document.createElement("p");
+    revealFeedback.className = "reveal-feedback";
+    revealFeedback.setAttribute("aria-live", "polite");
+    current.append(revealFeedback);
+    const continueButton = makeButton("Continue", advanceMeasure, "primary-action reveal-continue");
+    continueButton.hidden = true;
+    current.append(continueButton);
+    popupPanel = document.createElement("div");
     popupPanel.className = "chord-popup-panel";
     popupPanel.hidden = true;
-    current.append(popupPanel);
     current.querySelectorAll("[data-answer]").forEach((button) => {
       button.addEventListener("click", () => checkAnswer(button.dataset.answer, event, current));
     });
   }
 
   stageContent.replaceChildren(controls, current, sequence);
+  if (popupPanel) stageContent.append(popupPanel);
+  updateHintControl(stageContent.querySelector(".hint-button"));
   centerActiveMeasure(sequence);
 }
 
-function showHint(hintLevel) {
+function updateHintControl(button) {
+  if (!button) return;
+  const label = button.querySelector(".hint-label");
+  const noMoreHints = activeHintLevel >= HINT_LEVELS || answerRevealed || Boolean(answers[eventIndex]);
+  const nextLabel = noMoreHints
+    ? "No more hints"
+    : activeHintLevel === 0
+      ? "Show root note"
+      : "Show chord notes";
+  label.textContent = nextLabel;
+  button.disabled = noMoreHints;
+  button.setAttribute("aria-label", nextLabel);
+  button.querySelectorAll(".hint-dot").forEach((dot) => {
+    dot.classList.toggle("is-used", Number(dot.dataset.level) <= activeHintLevel);
+  });
+}
+
+function showHint(hintLevel, source) {
   const piece = currentPiece();
   const event = piece.events[eventIndex];
   usedHint = true;
-  activeHintLevel = hintLevel;
+  activeHintLevel = Math.max(activeHintLevel, Math.min(hintLevel, HINT_LEVELS));
+  console.info("Practice hint shown", { source, level: activeHintLevel, measure: event.measure });
   renderScoreSequenceForCurrent();
   const hintButton = stageContent.querySelector(".hint-button");
-  if (hintButton) {
-    hintButton.textContent = "Hint 2/2";
-    hintButton.setAttribute("aria-label", "Show hint 2 of 2");
-    hintButton.disabled = hintLevel >= 2;
+  updateHintControl(hintButton);
+  const hintControls = stageContent.querySelector(".hint-controls");
+  const hintMessage = stageContent.querySelector(".hint-message");
+  hintMessage.textContent = activeHintLevel === 1 ? "Listen to the root note" : "Listen for the chord notes";
+  if (source === "auto") {
+    hintControls.classList.remove("is-pulsing");
+    void hintControls.offsetWidth;
+    hintControls.classList.add("is-pulsing");
+    window.setTimeout(() => hintControls.classList.remove("is-pulsing"), 700);
   }
-  const feedback = stageContent.querySelector("#answer-feedback");
-  if (feedback) feedback.textContent = hintLevel === 1 ? "Listen to the root note" : "Listen for the chord notes";
 
   if (activeHintLevel >= 2) {
-    showChordPopup(CHORDS[event.chord]);
+    showChordPopup(CHORDS[event.chord], stageContent.querySelector(".chord-popup-panel"));
     playAudio(CHORDS[event.chord].audio, `${CHORDS[event.chord].label} chord`);
   } else {
     const popupPanel = stageContent.querySelector(".chord-popup-panel");
@@ -553,10 +641,12 @@ function showHint(hintLevel) {
     popupPanel.hidden = true;
     playAudio(`audio/notes/${CHORDS[event.chord].note}.mp3`, `${CHORDS[event.chord].note} root note`);
   }
+  if (wrongAnswers > 0 && activeHintLevel >= HINT_LEVELS && !hasRemainingWrongChoices()) {
+    revealAnswer(event, stageContent.querySelector(".current-measure"), false);
+  }
 }
 
-function showChordPopup(chord) {
-  const panel = stageContent.querySelector(".chord-popup-panel");
+function showChordPopup(chord, panel) {
   panel.replaceChildren();
   panel.hidden = false;
   const heading = document.createElement("p");
@@ -566,6 +656,67 @@ function showChordPopup(chord) {
   const popup = image(chord.popup, `${chord.label} chord tones`, "hint-popup");
   frame.append(popup);
   panel.append(heading, frame);
+  positionHintPanel(panel);
+}
+
+function positionHintPanel(panel) {
+  const activeTile = stageContent.querySelector(".measure-tile.is-active");
+  if (!activeTile) return;
+  const stageRect = stageContent.getBoundingClientRect();
+  const tileRect = activeTile.getBoundingClientRect();
+  const panelWidth = panel.offsetWidth;
+  const panelHeight = panel.offsetHeight;
+  const styles = getComputedStyle(stageContent);
+  const popupGap = Number.parseFloat(styles.getPropertyValue("--practice-popup-gap"));
+  const popupAnchorOffset = Number.parseFloat(styles.getPropertyValue("--practice-popup-anchor-offset"));
+  let left = tileRect.right - stageRect.left + popupGap;
+  if (left + panelWidth > stageContent.clientWidth) {
+    left = tileRect.left - stageRect.left - panelWidth - popupGap;
+  }
+  left = Math.max(0, Math.min(left, stageContent.clientWidth - panelWidth));
+  let top = tileRect.top - stageRect.top + popupAnchorOffset;
+  if (top + panelHeight > stageContent.clientHeight) {
+    top = tileRect.bottom - stageRect.top - panelHeight - popupGap;
+  }
+  top = Math.max(0, Math.min(top, stageContent.clientHeight - panelHeight));
+  panel.style.left = `${left}px`;
+  panel.style.top = `${top}px`;
+}
+
+window.addEventListener("resize", () => {
+  const panel = stageContent.querySelector(".chord-popup-panel");
+  if (panel && !panel.hidden) positionHintPanel(panel);
+});
+
+function createMasteryBadge(mastery) {
+  const badge = document.createElement("span");
+  badge.className = `mastery-badge is-${mastery}`;
+  badge.textContent = mastery[0].toUpperCase() + mastery.slice(1);
+  badge.setAttribute("aria-label", `${mastery} mastery`);
+  const icon = document.createElement("span");
+  icon.className = "mastery-icon";
+  icon.setAttribute("aria-hidden", "true");
+  badge.prepend(icon);
+  return badge;
+}
+
+function masteryBadgesFor(indices, className = "tile-result") {
+  const status = document.createElement("span");
+  status.className = className;
+  const levels = [...new Set(indices.map((index) => masteryStates[index]).filter(Boolean))];
+  if (!levels.length) {
+    status.textContent = "GIVEN";
+    return status;
+  }
+  levels.forEach((level) => status.append(createMasteryBadge(level)));
+  return status;
+}
+
+function hasRemainingWrongChoices() {
+  const event = currentPiece().events[eventIndex];
+  return [...stageContent.querySelectorAll("[data-answer]")].some((button) =>
+    button.dataset.answer !== event.chord && !button.disabled
+  );
 }
 
 function renderChordVisual(chord, container) {
@@ -577,23 +728,161 @@ function checkAnswer(selected, event, container) {
   if (selected === event.chord) {
     answers[eventIndex] = event.chord;
     firstTryCorrect[eventIndex] = wrongAnswers === 0 && !usedHint;
-    feedback.textContent = `Correct: ${CHORDS[event.chord].label}.`;
-    container.querySelectorAll("[data-answer]").forEach((button) => {
+    masteryStates[eventIndex] = activeHintLevel >= HINT_LEVELS
+      ? "supported"
+      : usedHint
+        ? "guided"
+        : "solid";
+    answerCelebrating = true;
+    feedback.textContent = `Correct: ${CHORDS[event.chord].label}`;
+    const answerButtons = container.querySelectorAll("[data-answer]");
+    const selectedButton = [...answerButtons].find((button) => button.dataset.answer === selected);
+    answerButtons.forEach((button) => {
       button.disabled = true;
     });
     container.querySelectorAll(".hint-button").forEach((button) => {
       button.disabled = true;
+      updateHintControl(button);
     });
-    setStatus("Correct answer.");
+    container.querySelector(".hear-chosen-button").hidden = true;
+    container.querySelector(".hint-message").textContent = "";
+    const hintPanel = stageContent.querySelector(".chord-popup-panel");
+    if (hintPanel) hintPanel.hidden = true;
+    setStatus("");
     renderScoreSequenceForCurrent();
+    animateMasteryShape();
+    if (selectedButton) animateShapeToChordNotes(selectedButton, selected, event);
+    playAudio(CHORDS[event.chord].audio, `${CHORDS[event.chord].label} chord`);
     window.clearTimeout(answerAdvanceTimer);
-    answerAdvanceTimer = window.setTimeout(advanceMeasure, 900);
+    answerAdvanceTimer = window.setTimeout(advanceMeasure, 1250);
     return;
   }
 
   wrongAnswers += 1;
-  feedback.textContent = "";
-  showHint(Math.min(2, Math.max(wrongAnswers, activeHintLevel + 1)));
+  if (!wrongSelections[eventIndex]) wrongSelections[eventIndex] = [];
+  wrongSelections[eventIndex].push(selected);
+  const selectedButton = [...container.querySelectorAll("[data-answer]")].find((button) => button.dataset.answer === selected);
+  if (selectedButton) {
+    selectedButton.disabled = true;
+    selectedButton.classList.add("is-wrong");
+    selectedButton.setAttribute("aria-label", `Chord ${CHORDS[selected].label}, not this one`);
+    const wrongLabel = document.createElement("span");
+    wrongLabel.className = "wrong-choice-label";
+    wrongLabel.textContent = "× not this one";
+    selectedButton.append(wrongLabel);
+  }
+  feedback.textContent = "Not quite. Hint opened - listen again.";
+  container.dataset.lastWrongChoice = selected;
+  const hearButton = container.querySelector(".hear-chosen-button");
+  if (CHORDS[selected]?.audio) {
+    hearButton.hidden = false;
+    hearButton.setAttribute("aria-label", `Hear what you chose: ${CHORDS[selected].label}`);
+  }
+  showHint(Math.min(HINT_LEVELS, Math.max(wrongAnswers, activeHintLevel + 1)), "auto");
+  if (wrongAnswers >= MAX_WRONG_BEFORE_REVEAL
+    || (activeHintLevel >= HINT_LEVELS && !hasRemainingWrongChoices())) {
+    revealAnswer(event, container, activeHintLevel < HINT_LEVELS);
+  }
+}
+
+function revealAnswer(event, container, playCorrectChord = true) {
+  if (answerRevealed) return;
+  answerRevealed = true;
+  answers[eventIndex] = event.chord;
+  masteryStates[eventIndex] = "supported";
+  const feedback = container.querySelector("#answer-feedback");
+  const revealFeedback = container.querySelector(".reveal-feedback");
+  revealFeedback.textContent = `This was ${CHORDS[event.chord].label}.`;
+  feedback.textContent = "Not quite. Hint opened - listen again.";
+  container.querySelectorAll("[data-answer], .hint-button, .hear-chosen-button").forEach((button) => {
+    button.disabled = true;
+  });
+  container.querySelector(".reveal-continue").hidden = false;
+  renderScoreSequenceForCurrent();
+  if (playCorrectChord) playAudio(CHORDS[event.chord].audio, `${CHORDS[event.chord].label} chord`);
+}
+
+function animateMasteryShape() {
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const shape = stageContent.querySelector(".measure-tile.is-active .completion-mark img.shape-image");
+  if (!shape) return;
+  shape.animate([
+    { transform: "scale(0.65)", opacity: 0.6 },
+    { transform: "scale(1.08)", opacity: 1, offset: 0.78 },
+    { transform: "scale(1)", opacity: 1 }
+  ], { duration: 400, easing: "ease-out" });
+}
+
+async function animateShapeToChordNotes(answerButton, numeral, event) {
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const shape = answerButton.querySelector(".choice-art img");
+  const score = stageContent.querySelector(".measure-tile.is-active .tile-score > img.score");
+  if (!shape || !score) return;
+
+  answerButton.classList.add("is-answer-glowing");
+  window.setTimeout(() => answerButton.classList.remove("is-answer-glowing"), 500);
+
+  try {
+    await score.decode();
+    const highlightPath = `scores/chord note highlight/Section ${sectionIndex + 1}/${currentPiece().title}/${event.measure}.svg`;
+    const response = await fetch(assetUrl(highlightPath));
+    if (!response.ok) throw new Error(`HTTP ${response.status} for ${highlightPath}`);
+    const svgText = await response.text();
+    const svg = new DOMParser().parseFromString(svgText, "image/svg+xml").documentElement;
+    if (svg.localName !== "svg" || svg.querySelector("parsererror")) {
+      throw new Error(`Invalid SVG: ${highlightPath}`);
+    }
+    const viewBox = (svg.getAttribute("viewBox") || "").trim().split(/[ ,]+/).map(Number);
+    if (viewBox.length !== 4 || viewBox.some((value) => !Number.isFinite(value)) || !viewBox[2] || !viewBox[3]) {
+      throw new Error(`Missing SVG viewBox: ${highlightPath}`);
+    }
+    const seen = new Set();
+    const targets = [...svg.querySelectorAll('circle[fill="#D9D9D9"]')]
+      .map((circle) => ({ x: Number(circle.getAttribute("cx")), y: Number(circle.getAttribute("cy")) }))
+      .filter(({ x, y }) => Number.isFinite(x) && Number.isFinite(y))
+      .filter(({ x, y }) => {
+        const key = `${x},${y}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    if (!targets.length) throw new Error(`No highlighted note coordinates in ${highlightPath}`);
+    while (targets.length < 3) {
+      const first = targets[0];
+      const last = targets[targets.length - 1];
+      targets.push({ x: (first.x + last.x) / 2, y: (first.y + last.y) / 2 });
+    }
+
+    const scoreRect = score.getBoundingClientRect();
+    const shapeRect = shape.getBoundingClientRect();
+    const originX = shapeRect.left + shapeRect.width / 2;
+    const originY = shapeRect.top + shapeRect.height / 2;
+    const overlay = document.createElement("div");
+    overlay.className = "shape-flight-overlay";
+    overlay.setAttribute("aria-hidden", "true");
+    document.body.append(overlay);
+    targets.slice(0, 3).forEach(({ x, y }, index) => {
+      const piece = document.createElement("img");
+      piece.className = `shape-flight-piece shape-flight-piece-${index + 1}`;
+      piece.src = shape.src;
+      const targetX = scoreRect.left + ((x - viewBox[0]) / viewBox[2]) * scoreRect.width;
+      const targetY = scoreRect.top + ((y - viewBox[1]) / viewBox[3]) * scoreRect.height;
+      piece.style.left = `${originX - 18}px`;
+      piece.style.top = `${originY - 18}px`;
+      overlay.append(piece);
+      const splitX = (index - 1) * 12;
+      const flight = piece.animate([
+        { transform: "translate(0, 0) scale(1)", opacity: 1 },
+        { transform: `translate(${splitX}px, -30px) scale(0.8)`, opacity: 1, offset: 0.2 },
+        { transform: `translate(${targetX - originX}px, ${targetY - originY}px) scale(0.22)`, opacity: 0.9, offset: 0.82 },
+        { transform: `translate(${targetX - originX}px, ${targetY - originY}px) scale(0.08)`, opacity: 0 }
+      ], { duration: 1050, delay: index * 70, easing: "cubic-bezier(0.2, 0.7, 0.2, 1)" });
+      flight.onfinish = () => piece.remove();
+    });
+    window.setTimeout(() => overlay.remove(), 1450);
+  } catch (error) {
+    setStatus(`Could not animate chord notes: ${error.message}`);
+  }
 }
 
 function renderScoreSequenceForCurrent() {
@@ -632,6 +921,8 @@ function advanceMeasure() {
   wrongAnswers = 0;
   usedHint = false;
   activeHintLevel = 0;
+  answerRevealed = false;
+  answerCelebrating = false;
   if (eventIndex >= currentPiece().events.length) {
     enterPieceReview();
     return;
@@ -681,10 +972,7 @@ function renderPieceReview() {
     });
     tileScore.append(completion);
     item.append(label, tileScore);
-    const tileStatus = document.createElement("span");
-    tileStatus.className = "tile-result";
-    tileStatus.textContent = "IDENTIFIED";
-    item.append(tileStatus);
+    item.append(masteryBadgesFor(indices));
     sequence.append(item);
   });
   const controls = renderPieceControls();
