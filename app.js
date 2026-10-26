@@ -8,6 +8,8 @@ const homeButton = document.querySelector("#home-button");
 
 const MAX_WRONG_BEFORE_REVEAL = 3;
 const HINT_LEVELS = 2;
+const ADVANCE_PAUSE_MS = 250;
+const ADVANCE_FALLBACK_MS = 1500;
 const SESSION_STATE_KEY = "harmony-practice-progress";
 const participantId = new URLSearchParams(window.location.search).get("p") || "anon";
 const AUDIO_UNAVAILABLE_MESSAGE = "Audio isn't available. You can still continue without it.";
@@ -128,13 +130,13 @@ function scheduleChordAnswerAdvance(audio) {
     return;
   }
   pendingChordAdvance = { audio, fallbackTimer: undefined };
-  audio.addEventListener("ended", () => finishChordAnswerAdvance(400), { once: true });
+  audio.addEventListener("ended", () => finishChordAnswerAdvance(ADVANCE_PAUSE_MS), { once: true });
   const checkForClipEnd = () => {
     if (pendingChordAdvance?.audio !== audio) return;
     const reachedEnd = audio.ended
       || (Number.isFinite(audio.duration) && audio.currentTime >= audio.duration - 0.05);
     if (reachedEnd) {
-      finishChordAnswerAdvance(400);
+      finishChordAnswerAdvance(ADVANCE_PAUSE_MS);
       return;
     }
     if (audioUnavailable) {
@@ -147,7 +149,7 @@ function scheduleChordAnswerAdvance(audio) {
     }
     pendingChordAdvance.fallbackTimer = window.setTimeout(checkForClipEnd, 200);
   };
-  pendingChordAdvance.fallbackTimer = window.setTimeout(checkForClipEnd, 2000);
+  pendingChordAdvance.fallbackTimer = window.setTimeout(checkForClipEnd, ADVANCE_FALLBACK_MS);
 }
 
 function playAudio(path, label, onEnded, startAt = 0) {
@@ -592,8 +594,8 @@ function renderChordIntroduction() {
     playAudio(chord.audio, `${chord.label} chord`);
     saveProgress();
   }, "intro-shape-button");
-  shapeButton.setAttribute("aria-label", `Reveal ${chord.function} chord`);
-  shapeButton.append(image(`shapes/${chord.shape}`, `${chord.function} shape`, "intro-shape"));
+  shapeButton.setAttribute("aria-label", `Reveal ${chordFunctionLabel(chord)} chord`);
+  shapeButton.append(image(`shapes/${chord.shape}`, `${chordFunctionLabel(chord)} shape`, "intro-shape"));
   const clickCue = document.createElement("span");
   clickCue.className = "intro-click-cue";
   clickCue.textContent = "Click to explore";
@@ -603,7 +605,7 @@ function renderChordIntroduction() {
   visual.className = "intro-chord-visual";
   const label = document.createElement("p");
   label.className = "intro-chord-label";
-  label.textContent = `${chord.function} / ${chord.label}`;
+  label.textContent = `${chordFunctionLabel(chord)} / ${chord.label}`;
   const reveal = document.createElement("div");
   reveal.className = "intro-reveal";
   reveal.append(visual, label);
@@ -645,6 +647,10 @@ function shapeImage(numeral, alt = "") {
   return image(`shapes/${CHORDS[numeral].shape}`, alt, "shape-image");
 }
 
+function chordFunctionLabel(chord) {
+  return chord.function === "Subtonic" ? "Leading-tone" : chord.function;
+}
+
 function renderChoiceButtons(chords) {
   const choices = document.createElement("div");
   choices.className = "choice-grid";
@@ -663,10 +669,10 @@ function renderChoiceButtons(chords) {
     }
     const art = document.createElement("span");
     art.className = "choice-art";
-    art.append(shapeImage(numeral, `${chord.function} shape`));
+    art.append(shapeImage(numeral, `${chordFunctionLabel(chord)} shape`));
     const label = document.createElement("span");
     label.className = "choice-function";
-    label.textContent = chord.function;
+    label.textContent = chordFunctionLabel(chord);
     const numeralLabel = document.createElement("span");
     numeralLabel.className = "choice-numeral";
     numeralLabel.textContent = chord.label;
@@ -990,7 +996,7 @@ function renderMeasures() {
   if (!isInteractive(event)) {
     const given = document.createElement("p");
     given.className = "given-answer";
-    given.textContent = `${CHORDS[event.chord].function} · ${CHORDS[event.chord].label}`;
+    given.textContent = `${chordFunctionLabel(CHORDS[event.chord])} · ${CHORDS[event.chord].label}`;
     current.append(given);
   } else {
     const prompt = document.createElement("p");
@@ -1218,7 +1224,7 @@ function hasRemainingWrongChoices() {
 }
 
 function renderChordVisual(chord, container) {
-  container.replaceChildren(image(chord.popup, `${chord.function} chord`, "intro-chord-image"));
+  container.replaceChildren(image(chord.popup, `${chordFunctionLabel(chord)} chord`, "intro-chord-image"));
 }
 
 function checkAnswer(selected, event, container) {
