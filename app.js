@@ -8,8 +8,8 @@ const homeButton = document.querySelector("#home-button");
 
 const MAX_WRONG_BEFORE_REVEAL = 3;
 const HINT_LEVELS = 2;
+const CHORD_MAX_MS = 3200;
 const ADVANCE_PAUSE_MS = 250;
-const ADVANCE_FALLBACK_MS = 1500;
 const SESSION_STATE_KEY = "harmony-practice-progress";
 const participantId = new URLSearchParams(window.location.search).get("p") || "anon";
 const AUDIO_UNAVAILABLE_MESSAGE = "Audio isn't available. You can still continue without it.";
@@ -43,10 +43,11 @@ let replays = 0;
 let audioUnavailable = false;
 let audioUnavailableLogged = false;
 let pendingChordAdvance;
+let pendingAudioRetry;
+let audioUnlocked = false;
 const preloadedAudio = new Map();
 const boundListenAudio = new WeakSet();
 const interactionLog = [];
-const audioAvailabilityTimers = new WeakMap();
 
 function assetUrl(path) {
   return `assets/${path.split("/").map(encodeURIComponent).join("/")}`;
@@ -96,7 +97,6 @@ function setStatus(message) {
 }
 
 function setAudioUnavailable() {
-  if (audioUnavailable) return;
   audioUnavailable = true;
   if (!audioUnavailableLogged) {
     audioUnavailableLogged = true;
@@ -107,9 +107,40 @@ function setAudioUnavailable() {
   if (pendingChordAdvance) finishChordAnswerAdvance(1200);
 }
 
+function clearAudioUnavailable() {
+  const wasUnavailable = audioUnavailable;
+  audioUnavailable = false;
+  setStatus("");
+  if (wasUnavailable) render();
+}
+
+function handleAudioPlaybackError(error, retryPlayback) {
+  if (error.name === "NotAllowedError") {
+    pendingAudioRetry = retryPlayback;
+    status.textContent = "Tap anywhere to enable sound.";
+    status.classList.toggle("audio-unavailable-notice", audioUnavailable);
+  } else {
+    setAudioUnavailable();
+  }
+}
+
+function unlockAudioOnGesture() {
+  if (!audioUnlocked) {
+    audioUnlocked = true;
+    preloadedAudio.forEach((audio) => audio.load());
+  }
+  if (pendingAudioRetry) {
+    const retryPlayback = pendingAudioRetry;
+    pendingAudioRetry = undefined;
+    retryPlayback();
+  }
+}
+
 function cancelPendingChordAdvance() {
   if (!pendingChordAdvance) return;
-  window.clearTimeout(pendingChordAdvance.fallbackTimer);
+  window.clearTimeout(pendingChordAdvance.maxTimer);
+  window.clearInterval(pendingChordAdvance.fadeTimer);
+  pendingChordAdvance.audio.volume = pendingChordAdvance.originalVolume;
   pendingChordAdvance = undefined;
 }
 
@@ -129,36 +160,38 @@ function scheduleChordAnswerAdvance(audio) {
     }, 1200);
     return;
   }
-  pendingChordAdvance = { audio, fallbackTimer: undefined };
+  pendingChordAdvance = { audio, originalVolume: audio.volume, maxTimer: undefined, fadeTimer: undefined, triggered: false };
   audio.addEventListener("ended", () => finishChordAnswerAdvance(ADVANCE_PAUSE_MS), { once: true });
-  const checkForClipEnd = () => {
-    if (pendingChordAdvance?.audio !== audio) return;
-    const reachedEnd = audio.ended
-      || (Number.isFinite(audio.duration) && audio.currentTime >= audio.duration - 0.05);
-    if (reachedEnd) {
-      finishChordAnswerAdvance(ADVANCE_PAUSE_MS);
-      return;
-    }
-    if (audioUnavailable) {
-      finishChordAnswerAdvance(1200);
-      return;
-    }
-    if (audio.paused) {
-      setAudioUnavailable();
-      return;
-    }
-    pendingChordAdvance.fallbackTimer = window.setTimeout(checkForClipEnd, 200);
+  const startMaximumDuration = () => {
+    if (pendingChordAdvance?.audio !== audio || pendingChordAdvance.maxTimer !== undefined) return;
+    pendingChordAdvance.maxTimer = window.setTimeout(() => {
+      const advance = pendingChordAdvance;
+      if (advance?.audio !== audio || advance.triggered) return;
+      advance.triggered = true;
+      if (audio.ended || audio.paused) {
+        finishChordAnswerAdvance(ADVANCE_PAUSE_MS);
+        return;
+      }
+      const startedAt = performance.now();
+      advance.fadeTimer = window.setInterval(() => {
+        if (pendingChordAdvance !== advance) return;
+        const elapsed = performance.now() - startedAt;
+        audio.volume = advance.originalVolume * Math.max(0, 1 - elapsed / 150);
+        if (elapsed >= 150) {
+          window.clearInterval(advance.fadeTimer);
+          audio.pause();
+          audio.volume = advance.originalVolume;
+          finishChordAnswerAdvance(ADVANCE_PAUSE_MS);
+        }
+      }, 15);
+    }, CHORD_MAX_MS);
   };
-  pendingChordAdvance.fallbackTimer = window.setTimeout(checkForClipEnd, ADVANCE_FALLBACK_MS);
+  audio.addEventListener("playing", startMaximumDuration, { once: true });
+  if (!audio.paused && audio.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) startMaximumDuration();
 }
 
 function playAudio(path, label, onEnded, startAt = 0) {
-  if (audioUnavailable) return null;
   setStatus("");
-  if (window.location.protocol === "file:") {
-    setAudioUnavailable();
-    return;
-  }
   if (activeAudio) {
     activeAudio.pause();
     activeAudio.currentTime = 0;
@@ -175,34 +208,22 @@ function playAudio(path, label, onEnded, startAt = 0) {
   audio.currentTime = startAt;
   audio.volume = audioVolume;
   activeAudio = audio;
-  const clearAvailabilityTimer = () => {
-    window.clearTimeout(audioAvailabilityTimers.get(audio));
-    audioAvailabilityTimers.delete(audio);
-  };
-  const markPlayable = () => clearAvailabilityTimer();
-  audio.addEventListener("canplay", markPlayable);
-  audio.addEventListener("playing", markPlayable);
   audio.addEventListener("error", () => {
-    clearAvailabilityTimer();
     if (activeAudio === audio) setAudioUnavailable();
   }, { once: true });
-  if (audio.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) {
-    markPlayable();
-  } else {
-    audioAvailabilityTimers.set(audio, window.setTimeout(() => {
-      if (audio.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) setAudioUnavailable();
-    }, 4000));
-  }
   audio.addEventListener("ended", () => {
     if (activeAudio === audio) {
       if (path === currentPiece().fullAudio) preloadAudio(path);
       if (onEnded) onEnded();
     }
   }, { once: true });
-  audio.play().catch((error) => {
-    if (activeAudio !== audio || error.name === "AbortError") return;
-    setAudioUnavailable();
-  });
+  const attemptPlayback = () => {
+    audio.play().then(() => {
+      if (pendingAudioRetry === attemptPlayback) pendingAudioRetry = undefined;
+      clearAudioUnavailable();
+    }).catch((error) => handleAudioPlaybackError(error, attemptPlayback));
+  };
+  attemptPlayback();
   return audio;
 }
 
@@ -756,10 +777,10 @@ function toggleListenPlayback() {
     if (audio.ended) audio.currentTime = 0;
     if (activeAudio && activeAudio !== audio) activeAudio.pause();
     activeAudio = audio;
-    audio.play().catch((error) => {
-      if (activeAudio !== audio || error.name === "AbortError") return;
-      setAudioUnavailable();
-    });
+    const attemptPlayback = () => audio.play()
+      .then(clearAudioUnavailable)
+      .catch((error) => handleAudioPlaybackError(error, attemptPlayback));
+    attemptPlayback();
   }
   refreshListenPlayer();
 }
@@ -1260,7 +1281,6 @@ function checkAnswer(selected, event, container) {
     renderScoreSequenceForCurrent();
     animateMasteryShape();
     if (selectedButton) animateShapeToChordNotes(selectedButton, selected, event);
-    playAudio(CHORDS[event.chord].audio, `${CHORDS[event.chord].label} chord`);
     window.clearTimeout(answerAdvanceTimer);
     scheduleChordAnswerAdvance(playAudio(CHORDS[event.chord].audio, `${CHORDS[event.chord].label} chord`));
     return;
@@ -1691,7 +1711,6 @@ function continueCurriculum() {
 
 function render() {
   renderProgress();
-  if (window.location.protocol === "file:") setAudioUnavailable();
   if (stage === "home") renderHome();
   else if (stage === "introduction") renderChordIntroduction();
   else if (stage === "piece-preview") renderPiecePreview();
@@ -1702,6 +1721,8 @@ function render() {
 }
 
 homeButton.addEventListener("click", returnToHome);
+window.addEventListener("pointerdown", unlockAudioOnGesture, true);
+window.addEventListener("keydown", unlockAudioOnGesture, true);
 window.addEventListener("keydown", handleKeyboardShortcuts);
 window.addEventListener("pagehide", () => {
   if (listenAudio && !listenAudio.paused) listenAudio.pause();
