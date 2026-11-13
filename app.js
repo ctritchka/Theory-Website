@@ -103,7 +103,9 @@ function setAudioUnavailable() {
     logInteraction("audio_unavailable");
   }
   setStatus(AUDIO_UNAVAILABLE_MESSAGE);
-  syncAudioUnavailableUI();
+  const event = stage === "measures" ? currentPiece().events[eventIndex] : undefined;
+  if (event && !isInteractive(event)) render();
+  else syncAudioUnavailableUI();
   if (pendingChordAdvance) finishChordAnswerAdvance(1200);
 }
 
@@ -314,7 +316,8 @@ function restoreProgress(snapshot) {
   audioVolume = snapshot.audioVolume;
   curriculumComplete = snapshot.curriculumComplete;
   completionVisible = snapshot.completionVisible;
-  listenPosition = listenAudio ? snapshot.listenPosition : 0;
+  listenPosition = snapshot.listenPosition;
+  if (listenAudio) listenAudio.currentTime = listenPosition;
   listenDuration = snapshot.listenDuration;
   activeAudio = undefined;
 }
@@ -932,6 +935,7 @@ function renderScoreSequence() {
     const { event, indices } = group;
     const item = document.createElement("div");
     const isCurrent = indices.includes(eventIndex);
+    if (isCurrent) item.tabIndex = -1;
     const answered = indices.map((answerIndex) => {
       const groupedEvent = piece.events[answerIndex];
       return answers[answerIndex] || (!isInteractive(groupedEvent) ? groupedEvent.chord : "");
@@ -1019,9 +1023,11 @@ function renderMeasures() {
     given.className = "given-answer";
     given.textContent = `${chordFunctionLabel(CHORDS[event.chord])} · ${CHORDS[event.chord].label}`;
     current.append(given);
+    if (audioUnavailable) current.append(makeButton("Continue", advanceMeasure, "primary-action"));
   } else {
     const prompt = document.createElement("p");
     prompt.className = "question-prompt";
+    prompt.tabIndex = -1;
       prompt.textContent = audioUnavailable ? "Which function fits these notes?" : "What function do you hear?";
     const introducedChords = new Set(SECTIONS.slice(0, sectionIndex + 1).flatMap((section) => section.numerals));
     const choices = renderChoiceButtons(piece.choices.filter((numeral) => introducedChords.has(numeral)));
@@ -1525,9 +1531,13 @@ function advanceMeasure() {
   answerCelebrating = false;
   if (eventIndex >= currentPiece().events.length) {
     enterPieceReview();
+    stageContent.querySelector(".review-sequence")?.focus({ preventScroll: true });
     return;
   }
   render();
+  const focusTarget = stageContent.querySelector(".question-prompt")
+    || stageContent.querySelector(".measure-tile.is-active");
+  focusTarget?.focus({ preventScroll: true });
   playCurrentMeasure();
 }
 
