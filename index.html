@@ -3,15 +3,16 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Harmony Practice</title>
+    <title data-i18n="app.title">Harmony Practice</title>
     <link rel="stylesheet" href="app.css">
     <script src="curriculum.js" defer></script>
+    <script src="i18n.js" defer></script>
     <script src="app.js" defer></script>
   </head>
   <body>
     <main>
       <header>
-        <button id="home-button" class="home-button" type="button" hidden>Home</button>
+        <button id="home-button" class="home-button" type="button" data-i18n="nav.home" hidden>Home</button>
         <div class="header-content">
           <p id="progress" class="progress-label"></p>
           <div class="piece-heading">
@@ -19,9 +20,16 @@
               <h1 id="piece-title">Harmony Practice</h1>
               <p id="piece-composer"></p>
             </div>
-            <nav id="phase-progress" aria-label="Current lesson phase"></nav>
+            <nav id="phase-progress" data-i18n-aria="nav.currentPhase" aria-label="Current lesson phase"></nav>
           </div>
         </div>
+        <nav id="language-switcher" class="language-switcher" data-i18n-aria="language.label" aria-label="Language">
+          <button type="button" data-lang="en" data-i18n-aria="language.english" data-i18n-title="language.english" aria-label="Switch language to English" aria-pressed="true" title="Switch language to English">EN</button>
+          <span aria-hidden="true">|</span>
+          <button type="button" data-lang="fr" data-i18n-aria="language.french" data-i18n-title="language.french" aria-label="Switch language to French" aria-pressed="false" title="Switch language to French">FR</button>
+          <span aria-hidden="true">|</span>
+          <button type="button" data-lang="zh-Hans" data-i18n-aria="language.chinese" data-i18n-title="language.chinese" aria-label="Switch language to Simplified Chinese" aria-pressed="false" title="Switch language to Simplified Chinese">中文</button>
+        </nav>
       </header>
 
       <section id="stage-content" aria-live="polite"></section>

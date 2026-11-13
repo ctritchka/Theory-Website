@@ -12,7 +12,6 @@ const CHORD_MAX_MS = 3200;
 const ADVANCE_PAUSE_MS = 250;
 const SESSION_STATE_KEY = "harmony-practice-progress";
 const participantId = new URLSearchParams(window.location.search).get("p") || "anon";
-const AUDIO_UNAVAILABLE_MESSAGE = "Audio isn't available. You can still continue without it.";
 
 let sectionIndex = 0;
 let pieceIndex = 0;
@@ -75,8 +74,16 @@ function logInteraction(eventName, details = {}) {
     wrongCount: wrongAnswers,
     hintLevel: activeHintLevel,
     hintSource: details.hintSource ?? null,
-    replays
+    replays,
+    lang: getLanguage()
   });
+}
+
+function translatedError(key, vars) {
+  const error = new Error(t(key, vars));
+  error.translationKey = key;
+  error.translationVars = vars;
+  return error;
 }
 
 function downloadInteractionLog() {
@@ -91,8 +98,14 @@ function downloadInteractionLog() {
   window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
-function setStatus(message) {
-  status.textContent = audioUnavailable ? AUDIO_UNAVAILABLE_MESSAGE : message;
+function setStatus(key, vars = {}) {
+  if (audioUnavailable) localize(status, "audio.notice");
+  else if (key) localize(status, key, vars);
+  else {
+    status.textContent = "";
+    delete status.dataset.i18n;
+    delete status.dataset.i18nTextVars;
+  }
   status.classList.toggle("audio-unavailable-notice", audioUnavailable);
 }
 
@@ -102,7 +115,7 @@ function setAudioUnavailable() {
     audioUnavailableLogged = true;
     logInteraction("audio_unavailable");
   }
-  setStatus(AUDIO_UNAVAILABLE_MESSAGE);
+  setStatus("audio.unavailable");
   const event = stage === "measures" ? currentPiece().events[eventIndex] : undefined;
   if (event && !isInteractive(event)) render();
   else syncAudioUnavailableUI();
@@ -119,7 +132,7 @@ function clearAudioUnavailable() {
 function handleAudioPlaybackError(error, retryPlayback) {
   if (error.name === "NotAllowedError") {
     pendingAudioRetry = retryPlayback;
-    status.textContent = "Tap anywhere to enable sound.";
+    localize(status, "audio.enable");
     status.classList.toggle("audio-unavailable-notice", audioUnavailable);
   } else {
     setAudioUnavailable();
@@ -233,34 +246,37 @@ function syncAudioUnavailableUI() {
   if (!audioUnavailable) return;
   if (stage === "piece-preview") {
     const note = stageContent.querySelector(".listening-mode p");
-    if (note) note.textContent = "Listen to the full piece, or read through the score, then continue.";
+    if (note) localize(note, "listen.noteUnavailable");
   }
   if (stage === "measures") {
     const prompt = stageContent.querySelector(".question-prompt");
-    if (prompt) prompt.textContent = "Which function fits these notes?";
+    if (prompt) localize(prompt, "practice.prompt.fit");
     stageContent.querySelectorAll(".piece-controls .icon-button, .hear-chosen-button").forEach((button) => {
       button.disabled = true;
-      button.setAttribute("aria-label", "Audio unavailable");
-      button.replaceChildren(document.createTextNode("Audio unavailable"));
+      localize(button, "audio.unavailable", {}, "aria");
+      if (button.classList.contains("hear-chosen-button")) localize(button, "audio.unavailable");
+      const label = button.querySelector(".button-label");
+      if (label) localize(label, "audio.unavailable");
+      const hintLabel = button.querySelector(".hint-label");
+      if (hintLabel) localize(hintLabel, "audio.unavailable");
     });
     const hintMessage = stageContent.querySelector(".hint-message");
     if (hintMessage && activeHintLevel > 0) {
       const chord = currentPiece().events[eventIndex];
-      hintMessage.textContent = activeHintLevel === 1
-        ? `Root note: ${CHORDS[chord.chord].note}`
-        : "Chord notes are shown in the score.";
+      localize(hintMessage, activeHintLevel === 1 ? "hint.rootShown" : "hint.chordShown",
+        activeHintLevel === 1 ? { note: CHORDS[chord.chord].note } : {});
     }
     const feedback = stageContent.querySelector("#answer-feedback");
     if (feedback && (wrongAnswers > 0 || answerRevealed)) {
-      feedback.textContent = wrongAnswerFeedbackText();
+      localize(feedback, wrongAnswerFeedbackKey());
     }
   }
   const listenButton = stageContent.querySelector(".listen-player .icon-button");
   if (listenButton) {
     listenButton.disabled = true;
-    listenButton.setAttribute("aria-label", "Audio unavailable");
+    localize(listenButton, "audio.unavailable", {}, "aria");
     listenButton.querySelector(".playback-icon").textContent = "";
-    listenButton.querySelector(".listen-play-label").textContent = "Audio unavailable";
+    localize(listenButton.querySelector(".listen-play-label"), "audio.unavailable");
   }
 }
 
@@ -294,7 +310,7 @@ function saveProgress() {
   try {
     sessionStorage.setItem(SESSION_STATE_KEY, JSON.stringify(savedProgress));
   } catch (error) {
-    setStatus(`Could not save progress in this tab: ${error.message}`);
+    setStatus("error.save", { message: error.message });
   }
 }
 
@@ -327,7 +343,7 @@ function loadSavedProgress() {
   try {
     serialized = sessionStorage.getItem(SESSION_STATE_KEY);
   } catch (error) {
-    setStatus(`Could not read saved progress in this tab: ${error.message}`);
+    setStatus("error.read", { message: error.message });
     return;
   }
   if (!serialized) return;
@@ -348,11 +364,11 @@ function loadSavedProgress() {
       && Number.isFinite(snapshot.listenPosition)
       && Number.isFinite(snapshot.listenDuration)
       && Number.isFinite(snapshot.audioVolume);
-    if (!valid) throw new Error("Saved progress has an unsupported format.");
+    if (!valid) throw new Error(t("error.unsupportedProgress"));
     savedProgress = snapshot;
     restoreProgress(snapshot);
   } catch (error) {
-    setStatus(`Could not restore saved progress: ${error.message}`);
+    setStatus("error.restore", { message: error.message });
   }
 }
 
@@ -361,7 +377,7 @@ function clearSavedProgress() {
   try {
     sessionStorage.removeItem(SESSION_STATE_KEY);
   } catch (error) {
-    setStatus(`Could not clear saved progress in this tab: ${error.message}`);
+    setStatus("error.clear", { message: error.message });
   }
 }
 
@@ -389,13 +405,14 @@ function preloadAudio(path) {
   preloadedAudio.set(path, audio);
 }
 
-function image(path, alt, className = "score") {
+function image(path, altKey, className = "score", vars = {}) {
   const element = document.createElement("img");
   element.className = className;
   element.src = assetUrl(path);
-  element.alt = alt;
+  if (altKey) localize(element, altKey, vars, "alt");
+  else element.alt = "";
   element.addEventListener("error", () => {
-    setStatus(`Could not load image: ${path}`);
+    setStatus("error.image", { path });
   }, { once: true });
   return element;
 }
@@ -436,14 +453,24 @@ function renderProgress() {
   const piece = currentPiece();
   const atPiece = !["home", "introduction"].includes(stage);
   stageContent.classList.toggle("is-practice", stage === "measures");
-  pieceTitle.textContent = stage === "home" ? "Harmony Practice" : stage === "introduction" ? "" : piece.workTitle;
+  if (stage === "home") localize(pieceTitle, "app.title");
+  else {
+    pieceTitle.textContent = stage === "introduction" ? "" : piece.workTitle;
+    delete pieceTitle.dataset.i18n;
+  }
   pieceTitle.hidden = stage === "introduction";
   pieceComposer.textContent = stage === "home" || stage === "introduction" ? "" : piece.composer;
-  progress.textContent = stage === "home"
-    ? ""
-    : stage === "introduction"
-      ? `Section ${sectionIndex + 1}: Chord introduction`
-      : `Section ${sectionIndex + 1}: Piece ${pieceIndex + 1} of ${currentSection().pieces.length}`;
+  if (stage === "introduction") localize(progress, "progress.introduction", { n: sectionIndex + 1 });
+  else if (atPiece) localize(progress, "progress.piece", {
+    section: sectionIndex + 1,
+    piece: pieceIndex + 1,
+    total: currentSection().pieces.length
+  });
+  else {
+    progress.textContent = "";
+    delete progress.dataset.i18n;
+    delete progress.dataset.i18nTextVars;
+  }
   homeButton.hidden = stage === "home";
   homeButton.classList.add("quiet-button");
   phaseProgress.replaceChildren();
@@ -452,7 +479,7 @@ function renderProgress() {
     const currentStep = stage === "piece-preview" ? 0 : stage === "measures" ? 1 : 2;
     const steps = document.createElement("ol");
     steps.className = "lesson-steps";
-    ["Listen", "Practice", "Review"].forEach((label, index) => {
+    ["step.listen", "step.practice", "step.review"].forEach((key, index) => {
       const step = document.createElement("li");
       step.className = `lesson-step${index === currentStep ? " is-current" : ""}${index < currentStep ? " is-complete" : ""}${index > currentStep ? " is-upcoming" : ""}`;
       if (index === currentStep) step.setAttribute("aria-current", "step");
@@ -462,7 +489,7 @@ function renderProgress() {
       number.textContent = index < currentStep ? "✓" : String(index + 1);
       const name = document.createElement("span");
       name.className = "lesson-step-label";
-      name.textContent = label;
+      localize(name, key);
       step.append(number, name);
       steps.append(step);
     });
@@ -472,16 +499,13 @@ function renderProgress() {
 
 function renderHome() {
   const heading = document.createElement("h2");
-  heading.textContent = curriculumComplete ? "Curriculum complete" : "Choose a section";
+  localize(heading, curriculumComplete ? "home.heading.complete" : "home.heading.choose");
   const choices = document.createElement("div");
   choices.className = "section-choices";
-  SECTIONS.forEach((section, index) => {
+  SECTIONS.forEach((_, index) => {
     const choice = document.createElement("div");
     choice.className = "section-choice";
-    const title = index === 2
-      ? "Mediant and Leading-tone"
-      : section.title.replace(/^Section \d+:\s*/, "");
-    choice.append(makeButton(`Section ${index + 1}: ${title}`, () => {
+    choice.append(makeButton("home.section", () => {
       curriculumComplete = false;
       clearSavedProgress();
       sectionIndex = index;
@@ -490,20 +514,34 @@ function renderHome() {
       introRevealed = false;
       resetPiece();
       setStage("introduction");
+    }, "", {
+      n: index + 1,
+      title: {
+        key: `section.${index + 1}.title`,
+        vars: {
+          tonic: { key: "music.tonic" },
+          dominant: { key: "music.dominant" },
+          subdominant: { key: "music.subdominant" },
+          supertonic: { key: "music.supertonic" },
+          mediant: { key: "music.mediant" },
+          submediant: { key: "music.submediant" },
+          leadingTone: { key: "music.leadingTone" }
+        }
+      }
     }));
     if (index === 0) {
       const marker = document.createElement("span");
       marker.className = "start-here-marker";
-      marker.textContent = "Start here";
+      localize(marker, "home.startHere");
       choice.append(marker);
     }
     choices.append(choice);
   });
   const guidance = document.createElement("p");
   guidance.className = "home-guidance";
-  guidance.textContent = "About 5 minutes. Headphones on. Start with Section 1; Sections 2 and 3 are optional.";
+  localize(guidance, "home.guidance");
   if (savedProgress) {
-    const resume = makeButton("Resume where you left off", () => {
+    const resume = makeButton("home.resume", () => {
       const snapshot = savedProgress;
       if (!snapshot) return;
       restoreProgress(snapshot);
@@ -514,8 +552,8 @@ function renderHome() {
   }
   if (curriculumComplete) {
     const message = document.createElement("p");
-    message.textContent = "You have completed all three sections.";
-    const restart = makeButton("Restart curriculum", () => {
+    localize(message, "home.completed");
+    const restart = makeButton("home.restart", () => {
       curriculumComplete = false;
       clearSavedProgress();
       sectionIndex = 0;
@@ -531,10 +569,10 @@ function renderHome() {
   stageContent.replaceChildren(heading, guidance, choices);
 }
 
-function makeButton(label, onClick, className = "") {
+function makeButton(key, onClick, className = "", vars = {}) {
   const button = document.createElement("button");
   button.type = "button";
-  button.textContent = label;
+  if (key) localize(button, key, vars);
   if (className) button.className = className;
   button.addEventListener("click", onClick);
   return button;
@@ -605,7 +643,7 @@ function renderChordIntroduction() {
   concepts[numeral].forEach((word, index) => {
     const concept = document.createElement("span");
     concept.className = `atmosphere-word word-${index + 1}`;
-    concept.textContent = word;
+    localize(concept, `concept.${word}`);
     words.append(concept);
   });
 
@@ -618,18 +656,23 @@ function renderChordIntroduction() {
     playAudio(chord.audio, `${chord.label} chord`);
     saveProgress();
   }, "intro-shape-button");
-  shapeButton.setAttribute("aria-label", `Reveal ${chordFunctionLabel(chord)} chord`);
-  shapeButton.append(image(`shapes/${chord.shape}`, `${chordFunctionLabel(chord)} shape`, "intro-shape"));
+  localize(shapeButton, "intro.reveal", { chord: { key: chordFunctionKey(chord) } }, "aria");
+  shapeButton.append(image(`shapes/${chord.shape}`, "intro.shapeAlt", "intro-shape", {
+    chord: { key: chordFunctionKey(chord) }
+  }));
   const clickCue = document.createElement("span");
   clickCue.className = "intro-click-cue";
-  clickCue.textContent = "Click to explore";
+  localize(clickCue, "intro.clickExplore");
   shapeButton.append(clickCue);
 
   const visual = document.createElement("div");
   visual.className = "intro-chord-visual";
   const label = document.createElement("p");
   label.className = "intro-chord-label";
-  label.textContent = `${chordFunctionLabel(chord)} / ${chord.label}`;
+  localize(label, "intro.chordLabel", {
+    chord: { key: chordFunctionKey(chord) },
+    numeral: chord.label
+  });
   const reveal = document.createElement("div");
   reveal.className = "intro-reveal";
   reveal.append(visual, label);
@@ -637,7 +680,7 @@ function renderChordIntroduction() {
   layout.className = "intro-layout";
   layout.append(shapeButton, reveal);
 
-  const next = makeButton("Next", () => {
+  const next = makeButton("intro.next", () => {
     if (!introRevealed) return;
     if (introIndex + 1 < section.newChords.length) {
       introIndex += 1;
@@ -667,12 +710,22 @@ function returnToHome() {
   setStage("home");
 }
 
-function shapeImage(numeral, alt = "") {
-  return image(`shapes/${CHORDS[numeral].shape}`, alt, "shape-image");
+function shapeImage(numeral, altKey = "", vars = {}) {
+  return image(`shapes/${CHORDS[numeral].shape}`, altKey, "shape-image", vars);
 }
 
-function chordFunctionLabel(chord) {
-  return chord.function === "Subtonic" ? "Leading-tone" : chord.function;
+function chordFunctionKey(chord) {
+  const functionName = chord.function === "Subtonic" ? "Leading-tone" : chord.function;
+  const keys = {
+    Tonic: "music.tonic",
+    Dominant: "music.dominant",
+    Subdominant: "music.subdominant",
+    Supertonic: "music.supertonic",
+    Mediant: "music.mediant",
+    Submediant: "music.submediant",
+    "Leading-tone": "music.leadingTone"
+  };
+  return keys[functionName];
 }
 
 function renderChoiceButtons(chords) {
@@ -685,18 +738,20 @@ function renderChoiceButtons(chords) {
     button.dataset.answer = numeral;
     button.dataset.keyNumber = String(index + 1);
     button.setAttribute("aria-keyshortcuts", String(index + 1));
-    button.setAttribute("aria-label", `Choose chord ${chord.label}`);
+    localize(button, "practice.chooseChord", { chord: chord.label }, "aria");
     if (wrongSelections[eventIndex]?.includes(numeral)) {
       button.disabled = true;
       button.classList.add("is-wrong");
-      button.title = "not this one";
+      localize(button, "practice.notThisOne", {}, "title");
     }
     const art = document.createElement("span");
     art.className = "choice-art";
-    art.append(shapeImage(numeral, `${chordFunctionLabel(chord)} shape`));
+    art.append(shapeImage(numeral, "intro.shapeAlt", {
+      chord: { key: chordFunctionKey(chord) }
+    }));
     const label = document.createElement("span");
     label.className = "choice-function";
-    label.textContent = chordFunctionLabel(chord);
+    localize(label, chordFunctionKey(chord));
     const numeralLabel = document.createElement("span");
     numeralLabel.className = "choice-numeral";
     numeralLabel.textContent = chord.label;
@@ -705,9 +760,9 @@ function renderChoiceButtons(chords) {
     if (wrongSelections[eventIndex]?.includes(numeral)) {
       const wrongLabel = document.createElement("span");
       wrongLabel.className = "wrong-choice-label";
-      wrongLabel.textContent = "× not this one";
+      localize(wrongLabel, "practice.notThisOne");
       button.append(wrongLabel);
-      button.setAttribute("aria-label", `Chord ${chord.label}, not this one`);
+      localize(button, "practice.chordAria", { chord: chord.label }, "aria");
     }
     choices.append(button);
   });
@@ -719,17 +774,15 @@ function renderPiecePreview() {
   const listeningMode = document.createElement("section");
   listeningMode.className = "listening-mode";
   const heading = document.createElement("h2");
-  heading.textContent = "Listen";
+  localize(heading, "listen.heading");
   const note = document.createElement("p");
-  note.textContent = audioUnavailable
-    ? "Listen to the full piece, or read through the score, then continue."
-    : "Listen to the full piece. No need to interact.";
+  localize(note, audioUnavailable ? "listen.noteUnavailable" : "listen.note");
   listeningMode.append(heading, note);
-  const score = image(piece.fullScore, `${piece.title} full score`, "score full-score");
+  const score = image(piece.fullScore, "score.fullAlt", "score full-score", { piece: piece.title });
   const controls = document.createElement("div");
   controls.className = "piece-controls listening-controls";
   controls.append(renderListenPlayer(piece), renderVolumeControl());
-  const continueButton = makeButton("Continue to practice", beginMeasures, "primary-action continue-practice");
+  const continueButton = makeButton("listen.continue", beginMeasures, "primary-action continue-practice");
   stageContent.replaceChildren(listeningMode, controls, score);
   stageContent.append(continueButton);
 }
@@ -737,16 +790,16 @@ function renderPiecePreview() {
 function renderListenPlayer(piece) {
   const player = document.createElement("div");
   player.className = "listen-player";
-  const playButton = makeIconButton("▶", "Play excerpt", toggleListenPlayback);
+  const playButton = makeIconButton("▶", "audio.playExcerpt", toggleListenPlayback);
   const playLabel = document.createElement("span");
   playLabel.className = "listen-play-label";
-  playLabel.textContent = "Play excerpt";
+  localize(playLabel, "audio.playExcerpt");
   playButton.lastChild.replaceWith(playLabel);
   const progress = document.createElement("progress");
   progress.className = "listen-progress";
   progress.max = String(listenDuration || 1);
   progress.value = String(listenPosition);
-  progress.setAttribute("aria-label", "Excerpt playback progress");
+  localize(progress, "audio.progress", {}, "aria");
   const time = document.createElement("span");
   time.className = "listen-time";
   const update = () => updateListenPlayer(playButton, progress, time);
@@ -796,13 +849,13 @@ function updateListenPlayer(button, progress, time) {
   progress.max = String(duration || 1);
   progress.value = String(Math.min(position, duration || position));
   const playing = Boolean(audio && !audio.paused && !audio.ended);
-  const label = audioUnavailable
-    ? "Audio unavailable"
-    : playing ? "Pause excerpt" : audio?.ended ? "Replay excerpt" : "Play excerpt";
+  const labelKey = audioUnavailable
+    ? "audio.unavailable"
+    : playing ? "audio.pauseExcerpt" : audio?.ended ? "audio.replayExcerpt" : "audio.playExcerpt";
   button.disabled = audioUnavailable;
-  button.setAttribute("aria-label", label);
+  localize(button, labelKey, {}, "aria");
   button.querySelector(".playback-icon").textContent = audioUnavailable ? "" : playing ? "Ⅱ" : "▶";
-  button.querySelector(".listen-play-label").textContent = label;
+  localize(button.querySelector(".listen-play-label"), labelKey);
   time.textContent = `${formatPlaybackTime(position)} / ${duration ? formatPlaybackTime(duration) : "--:--"}`;
 }
 
@@ -825,17 +878,17 @@ function renderPieceControls() {
   const controls = document.createElement("div");
   controls.className = "piece-controls";
   if (stage === "measures") {
-    const replayButton = makeIconButton("▶", "Play measure", replayCurrentMeasure);
+    const replayButton = makeIconButton("▶", "audio.playMeasure", replayCurrentMeasure);
     replayButton.dataset.keyShortcut = "r";
     replayButton.setAttribute("aria-keyshortcuts", "R");
     replayButton.append(createKeyHint("R"));
     controls.append(replayButton);
-    controls.append(makeIconButton("♪", "Play Tonic", () => {
+    controls.append(makeIconButton("♪", "audio.playTonic", () => {
       playAudio(CHORDS.I.audio, "Tonic chord");
     }));
     controls.lastElementChild.classList.add("secondary-control");
   } else if (stage === "piece-review") {
-    controls.append(makeIconButton("↻", "Replay excerpt", () => {
+    controls.append(makeIconButton("↻", "audio.replay", () => {
       replays += 1;
       logInteraction("replay");
       completionVisible = false;
@@ -847,21 +900,26 @@ function renderPieceControls() {
   if (audioUnavailable && stage !== "piece-preview") {
     controls.querySelectorAll(".icon-button").forEach((button) => {
       button.disabled = true;
-      button.setAttribute("aria-label", "Audio unavailable");
-      button.replaceChildren(document.createTextNode("Audio unavailable"));
+      localize(button, "audio.unavailable", {}, "aria");
+      localize(button.querySelector(".button-label"), "audio.unavailable");
     });
   }
   return controls;
 }
 
-function makeIconButton(icon, label, onClick) {
-  const button = makeButton(label, onClick, "icon-button");
+function makeIconButton(icon, key, onClick) {
+  const button = makeButton("", onClick, "icon-button");
+  if (key === "audio.playMeasure") button.classList.add("play-measure-button");
+  if (key === "audio.replay") button.classList.add("replay-excerpt-button");
   const iconElement = document.createElement("span");
   iconElement.className = "playback-icon";
   iconElement.setAttribute("aria-hidden", "true");
   iconElement.textContent = icon;
-  button.prepend(iconElement);
-  button.setAttribute("aria-label", label);
+  const label = document.createElement("span");
+  label.className = "button-label";
+  localize(label, key);
+  button.prepend(iconElement, label);
+  localize(button, key, {}, "aria");
   return button;
 }
 
@@ -869,14 +927,14 @@ function renderVolumeControl() {
   const container = document.createElement("label");
   container.className = "volume-control";
   const label = document.createElement("span");
-  label.textContent = "Volume";
+  localize(label, "audio.volume");
   const slider = document.createElement("input");
   slider.type = "range";
   slider.min = "0";
   slider.max = "1";
   slider.step = "0.05";
   slider.value = String(audioVolume);
-  slider.setAttribute("aria-label", "Playback volume");
+  localize(slider, "audio.volumeLabel", {}, "aria");
   slider.addEventListener("input", () => {
     audioVolume = Number(slider.value);
     if (activeAudio) activeAudio.volume = audioVolume;
@@ -945,11 +1003,15 @@ function renderScoreSequence() {
     item.dataset.measureId = event.measure;
     item.dataset.measureIndex = String(groupIndex + 1);
     item.setAttribute("role", "group");
-    const measureState = isCurrent ? "your turn" : isComplete ? "complete" : "up next";
-    item.setAttribute("aria-label", `Chord ${groupIndex + 1} of ${groupedEvents.length}, ${measureState}`);
+    const measureState = isCurrent ? "measure.yourTurn" : isComplete ? "measure.complete" : "measure.upNext";
+    localize(item, "measure.aria", {
+      n: groupIndex + 1,
+      total: groupedEvents.length,
+      state: { key: measureState }
+    }, "aria");
     const label = document.createElement("span");
     label.className = "measure-label";
-    label.textContent = `Chord ${groupIndex + 1} of ${groupedEvents.length}`;
+    localize(label, "measure.label", { n: groupIndex + 1, total: groupedEvents.length });
     const tileScore = document.createElement("div");
     tileScore.className = "tile-score";
     let scorePath = measureScorePath(event);
@@ -960,20 +1022,25 @@ function renderScoreSequence() {
     if (isCurrent && answerCelebrating) {
       scorePath = `scores/chord note highlight/Section ${sectionIndex + 1}/${piece.title}/${event.measure}.svg`;
     }
-    const score = image(scorePath, `${piece.title}, ${event.measure}${isCurrent && activeHintLevel ? `, hint ${activeHintLevel}` : ""}`);
+    const score = image(
+      scorePath,
+      isCurrent && activeHintLevel ? "measure.scoreHintAlt" : "measure.scoreAlt",
+      "score",
+      { piece: piece.title, measure: event.measure, n: activeHintLevel }
+    );
     if (isCurrent && activeHintLevel === HINT_LEVELS) score.classList.add("has-chord-note-halos");
     if (isCurrent && activeHintLevel > 0) {
       score.addEventListener("error", () => {
         score.src = assetUrl(measureScorePath(event));
-        score.alt = `${piece.title}, ${event.measure}; hint artwork unavailable`;
+        localize(score, "measure.scoreHintWarningAlt", { piece: piece.title, measure: event.measure }, "alt");
         const tile = score.closest(".measure-tile");
         if (!tile.querySelector(".hint-warning")) {
           const warning = document.createElement("span");
           warning.className = "hint-warning";
-          warning.textContent = "Hint image unavailable";
+          localize(warning, "measure.hintWarning");
           tile.append(warning);
         }
-        setStatus(`Hint artwork unavailable for ${event.measure}; showing the unhighlighted measure.`);
+        setStatus("feedback.hintUnavailable", { measure: event.measure });
       }, { once: true });
     }
     tileScore.append(score);
@@ -998,10 +1065,10 @@ function renderScoreSequence() {
       if (measureMastery.length) {
         measureMastery.forEach((mastery) => tileStatus.append(createMasteryBadge(mastery)));
       } else {
-        tileStatus.textContent = "GIVEN";
+        localize(tileStatus, "measure.given");
       }
     } else {
-      tileStatus.textContent = isCurrent ? "YOUR TURN" : "UP NEXT";
+      localize(tileStatus, isCurrent ? "measure.yourTurnLabel" : "measure.upNextLabel");
     }
     item.append(tileStatus);
     sequence.append(item);
@@ -1021,14 +1088,17 @@ function renderMeasures() {
   if (!isInteractive(event)) {
     const given = document.createElement("p");
     given.className = "given-answer";
-    given.textContent = `${chordFunctionLabel(CHORDS[event.chord])} · ${CHORDS[event.chord].label}`;
+    localize(given, "intro.chordLabel", {
+      chord: { key: chordFunctionKey(CHORDS[event.chord]) },
+      numeral: CHORDS[event.chord].label
+    });
     current.append(given);
-    if (audioUnavailable) current.append(makeButton("Continue", advanceMeasure, "primary-action"));
+    if (audioUnavailable) current.append(makeButton("practice.givenContinue", advanceMeasure, "primary-action"));
   } else {
     const prompt = document.createElement("p");
     prompt.className = "question-prompt";
     prompt.tabIndex = -1;
-      prompt.textContent = audioUnavailable ? "Which function fits these notes?" : "What function do you hear?";
+    localize(prompt, audioUnavailable ? "practice.prompt.fit" : "practice.prompt.hear");
     const introducedChords = new Set(SECTIONS.slice(0, sectionIndex + 1).flatMap((section) => section.numerals));
     const choices = renderChoiceButtons(piece.choices.filter((numeral) => introducedChords.has(numeral)));
     const hintControls = document.createElement("div");
@@ -1066,7 +1136,7 @@ function renderMeasures() {
     feedback.id = "answer-feedback";
     feedback.className = "answer-feedback";
     feedback.setAttribute("aria-live", "polite");
-    const hearChosenButton = makeButton("Hear what you chose", () => {
+    const hearChosenButton = makeButton("practice.hearChosen", () => {
       const selectedChord = CHORDS[stageContent.dataset.lastWrongChoice];
       if (selectedChord?.audio) playAudio(selectedChord.audio, `${selectedChord.label} chord`);
     }, "text-action hear-chosen-button");
@@ -1074,7 +1144,7 @@ function renderMeasures() {
     const revealFeedback = document.createElement("p");
     revealFeedback.className = "reveal-feedback";
     revealFeedback.setAttribute("aria-live", "polite");
-    const continueButton = makeButton("Continue", advanceMeasure, "primary-action reveal-continue");
+    const continueButton = makeButton("practice.continue", advanceMeasure, "primary-action reveal-continue");
     continueButton.hidden = true;
     const feedbackRow = document.createElement("div");
     feedbackRow.className = "feedback-row";
@@ -1109,7 +1179,8 @@ function restoreMeasureFeedback(current, event) {
   const hintMessage = stageContent.querySelector(".hint-message");
   const popupPanel = stageContent.querySelector(".chord-popup-panel");
   if (activeHintLevel > 0) {
-    hintMessage.textContent = hintInstruction(event);
+    const message = hintInstruction(event);
+    localize(hintMessage, message.key, message.vars);
     if (activeHintLevel >= 2) showChordPopup(CHORDS[event.chord], popupPanel);
   }
 
@@ -1122,22 +1193,24 @@ function restoreMeasureFeedback(current, event) {
 
   if (lastWrongChoice) {
     stageContent.dataset.lastWrongChoice = lastWrongChoice;
-    feedback.textContent = wrongAnswerFeedbackText();
+    localize(feedback, wrongAnswerFeedbackKey());
     if (CHORDS[lastWrongChoice]?.audio) {
       hearButton.hidden = false;
-      hearButton.setAttribute("aria-label", `Hear what you chose: ${CHORDS[lastWrongChoice].label}`);
+      localize(hearButton, "practice.hearChosenAria", {
+        chord: CHORDS[lastWrongChoice].label
+      }, "aria");
     }
   }
 
   if (answerRevealed) {
-    feedback.textContent = wrongAnswerFeedbackText();
-    revealFeedback.textContent = `This was ${CHORDS[event.chord].label}.`;
+    localize(feedback, wrongAnswerFeedbackKey());
+    localize(revealFeedback, "feedback.revealed", { chord: CHORDS[event.chord].label });
     continueButton.hidden = false;
     stageContent.querySelectorAll("[data-answer], .hint-button, .hear-chosen-button").forEach((button) => {
       button.disabled = true;
     });
   } else if (answers[eventIndex]) {
-    feedback.textContent = `Correct: ${CHORDS[event.chord].label}`;
+    localize(feedback, "feedback.correct", { chord: CHORDS[event.chord].label });
     continueButton.hidden = false;
     stageContent.querySelectorAll("[data-answer], .hint-button").forEach((button) => {
       button.disabled = true;
@@ -1150,11 +1223,11 @@ function updateHintControl(button) {
   const label = button.querySelector(".hint-label");
   const noMoreHints = activeHintLevel >= HINT_LEVELS || answerRevealed || Boolean(answers[eventIndex]);
   const nextLabel = noMoreHints
-    ? "No more hints"
-    : activeHintLevel === 0 ? "Show root note" : "Show chord notes";
-  label.textContent = nextLabel;
+    ? "hint.noMore"
+    : activeHintLevel === 0 ? "hint.showRoot" : "hint.showChordNotes";
+  localize(label, nextLabel);
   button.disabled = noMoreHints;
-  button.setAttribute("aria-label", nextLabel);
+  localize(button, nextLabel, {}, "aria");
   button.querySelectorAll(".hint-dot").forEach((dot) => {
     dot.classList.toggle("is-used", Number(dot.dataset.level) <= activeHintLevel);
   });
@@ -1172,7 +1245,8 @@ function showHint(hintLevel, source) {
   updateHintControl(hintButton);
   const hintControls = stageContent.querySelector(".hint-controls");
   const hintMessage = stageContent.querySelector(".hint-message");
-  hintMessage.textContent = hintInstruction(event);
+  const message = hintInstruction(event);
+  localize(hintMessage, message.key, message.vars);
   if (source === "auto") {
     hintControls.classList.remove("is-pulsing");
     void hintControls.offsetWidth;
@@ -1197,24 +1271,24 @@ function showHint(hintLevel, source) {
 function hintInstruction(event) {
   if (activeHintLevel === 1) {
     return audioUnavailable
-      ? `Root note: ${CHORDS[event.chord].note}`
-      : "Listen to the root note";
+      ? { key: "hint.rootShown", vars: { note: CHORDS[event.chord].note } }
+      : { key: "hint.rootListen" };
   }
-  return audioUnavailable ? "Chord notes are shown in the score." : "Listen for the chord notes";
+  return audioUnavailable ? { key: "hint.chordShown" } : { key: "hint.chordListen" };
 }
 
-function wrongAnswerFeedbackText() {
-  return audioUnavailable ? "Not quite. Hint opened." : "Not quite. Hint opened - listen again.";
+function wrongAnswerFeedbackKey() {
+  return audioUnavailable ? "feedback.wrong" : "feedback.wrongListen";
 }
 
 function showChordPopup(chord, panel) {
   panel.replaceChildren();
   panel.hidden = false;
   const heading = document.createElement("p");
-  heading.textContent = "Chord notes";
+  localize(heading, "hint.popupHeading");
   const frame = document.createElement("div");
   frame.className = "hint-popup-frame";
-  const popup = image(chord.popup, `${chord.label} chord tones`, "hint-popup");
+  const popup = image(chord.popup, "hint.popupAlt", "hint-popup", { chord: chord.label });
   frame.append(popup);
   panel.append(heading, frame);
 }
@@ -1222,12 +1296,14 @@ function showChordPopup(chord, panel) {
 function createMasteryBadge(mastery) {
   const badge = document.createElement("span");
   badge.className = `mastery-badge is-${mastery}`;
-  badge.textContent = mastery[0].toUpperCase() + mastery.slice(1);
-  badge.setAttribute("aria-label", `${mastery} mastery`);
+  const label = document.createElement("span");
+  label.className = "mastery-label";
+  localize(label, `mastery.${mastery}`);
+  localize(badge, "mastery.aria", { level: { key: `mastery.${mastery}` } }, "aria");
   const icon = document.createElement("span");
   icon.className = "mastery-icon";
   icon.setAttribute("aria-hidden", "true");
-  badge.prepend(icon);
+  badge.append(icon, label);
   return badge;
 }
 
@@ -1236,7 +1312,7 @@ function masteryBadgesFor(indices, className = "tile-result") {
   status.className = className;
   const levels = [...new Set(indices.map((index) => masteryStates[index]).filter(Boolean))];
   if (!levels.length) {
-    status.textContent = "GIVEN";
+    localize(status, "measure.given");
     return status;
   }
   levels.forEach((level) => status.append(createMasteryBadge(level)));
@@ -1251,7 +1327,9 @@ function hasRemainingWrongChoices() {
 }
 
 function renderChordVisual(chord, container) {
-  container.replaceChildren(image(chord.popup, `${chordFunctionLabel(chord)} chord`, "intro-chord-image"));
+  container.replaceChildren(image(chord.popup, "hint.popupAlt", "intro-chord-image", {
+    chord: chord.label
+  }));
 }
 
 function checkAnswer(selected, event, container) {
@@ -1266,7 +1344,7 @@ function checkAnswer(selected, event, container) {
         ? "guided"
         : "solid";
     answerCelebrating = true;
-    feedback.textContent = `Correct: ${CHORDS[event.chord].label}`;
+    localize(feedback, "feedback.correct", { chord: CHORDS[event.chord].label });
     const answerButtons = container.querySelectorAll("[data-answer]");
     const selectedButton = [...answerButtons].find((button) => button.dataset.answer === selected);
     answerButtons.forEach((button) => {
@@ -1281,6 +1359,8 @@ function checkAnswer(selected, event, container) {
     });
     container.querySelector(".hear-chosen-button").hidden = true;
     container.querySelector(".hint-message").textContent = "";
+    delete container.querySelector(".hint-message").dataset.i18n;
+    delete container.querySelector(".hint-message").dataset.i18nTextVars;
     const hintPanel = stageContent.querySelector(".chord-popup-panel");
     if (hintPanel) hintPanel.hidden = true;
     setStatus("");
@@ -1300,19 +1380,19 @@ function checkAnswer(selected, event, container) {
   if (selectedButton) {
     selectedButton.disabled = true;
     selectedButton.classList.add("is-wrong");
-    selectedButton.setAttribute("aria-label", `Chord ${CHORDS[selected].label}, not this one`);
-    selectedButton.title = "not this one";
+    localize(selectedButton, "practice.chordAria", { chord: CHORDS[selected].label }, "aria");
+    localize(selectedButton, "practice.notThisOne", {}, "title");
     const wrongLabel = document.createElement("span");
     wrongLabel.className = "wrong-choice-label";
-    wrongLabel.textContent = "× not this one";
+    localize(wrongLabel, "practice.notThisOne");
     selectedButton.append(wrongLabel);
   }
-  feedback.textContent = wrongAnswerFeedbackText();
+  localize(feedback, wrongAnswerFeedbackKey());
   container.dataset.lastWrongChoice = selected;
   const hearButton = container.querySelector(".hear-chosen-button");
   if (CHORDS[selected]?.audio) {
     hearButton.hidden = false;
-    hearButton.setAttribute("aria-label", `Hear what you chose: ${CHORDS[selected].label}`);
+    localize(hearButton, "practice.hearChosenAria", { chord: CHORDS[selected].label }, "aria");
   }
   showHint(Math.min(HINT_LEVELS, Math.max(wrongAnswers, activeHintLevel + 1)), "auto");
   if (wrongAnswers >= MAX_WRONG_BEFORE_REVEAL
@@ -1329,8 +1409,8 @@ function revealAnswer(event, container, playCorrectChord = true) {
   masteryStates[eventIndex] = "supported";
   const feedback = container.querySelector("#answer-feedback");
   const revealFeedback = container.querySelector(".reveal-feedback");
-  revealFeedback.textContent = `This was ${CHORDS[event.chord].label}.`;
-  feedback.textContent = wrongAnswerFeedbackText();
+  localize(revealFeedback, "feedback.revealed", { chord: CHORDS[event.chord].label });
+  localize(feedback, wrongAnswerFeedbackKey());
   container.querySelectorAll("[data-answer], .hint-button, .hear-chosen-button").forEach((button) => {
     button.disabled = true;
   });
@@ -1363,15 +1443,15 @@ async function animateShapeToChordNotes(answerButton, numeral, event) {
     await score.decode();
     const highlightPath = `scores/chord note highlight/Section ${sectionIndex + 1}/${currentPiece().title}/${event.measure}.svg`;
     const response = await fetch(assetUrl(highlightPath));
-    if (!response.ok) throw new Error(`HTTP ${response.status} for ${highlightPath}`);
+    if (!response.ok) throw translatedError("error.svgHttp", { status: response.status, path: highlightPath });
     const svgText = await response.text();
     const svg = new DOMParser().parseFromString(svgText, "image/svg+xml").documentElement;
     if (svg.localName !== "svg" || svg.querySelector("parsererror")) {
-      throw new Error(`Invalid SVG: ${highlightPath}`);
+      throw translatedError("error.invalidSvg", { path: highlightPath });
     }
     const viewBox = (svg.getAttribute("viewBox") || "").trim().split(/[ ,]+/).map(Number);
     if (viewBox.length !== 4 || viewBox.some((value) => !Number.isFinite(value)) || !viewBox[2] || !viewBox[3]) {
-      throw new Error(`Missing SVG viewBox: ${highlightPath}`);
+      throw translatedError("error.viewBox", { path: highlightPath });
     }
     const seen = new Set();
     const targets = [...svg.querySelectorAll('circle[fill="#D9D9D9"]')]
@@ -1383,7 +1463,7 @@ async function animateShapeToChordNotes(answerButton, numeral, event) {
         seen.add(key);
         return true;
       });
-    if (!targets.length) throw new Error(`No highlighted note coordinates in ${highlightPath}`);
+    if (!targets.length) throw translatedError("error.highlightCoordinates", { path: highlightPath });
     while (targets.length < 3) {
       const first = targets[0];
       const last = targets[targets.length - 1];
@@ -1418,7 +1498,10 @@ async function animateShapeToChordNotes(answerButton, numeral, event) {
     });
     window.setTimeout(() => overlay.remove(), 1450);
   } catch (error) {
-    setStatus(`Could not animate chord notes: ${error.message}`);
+    const message = error.translationKey
+      ? { key: error.translationKey, vars: error.translationVars }
+      : error.message;
+    setStatus("error.animate", { message });
   }
 }
 
@@ -1451,7 +1534,11 @@ function updateCurrentMeasureVisual() {
       path = `scores/chord note highlight/Section ${sectionIndex + 1}/${currentPiece().title}/${event.measure}.svg`;
     }
     score.src = assetUrl(path);
-    score.alt = `${currentPiece().title}, ${event.measure}${activeHintLevel ? `, hint ${activeHintLevel}` : ""}`;
+    localize(score, activeHintLevel ? "measure.scoreHintAlt" : "measure.scoreAlt", {
+      piece: currentPiece().title,
+      measure: event.measure,
+      n: activeHintLevel
+    }, "alt");
     score.classList.toggle("has-chord-note-halos", activeHintLevel === HINT_LEVELS);
   }
 
@@ -1481,9 +1568,9 @@ function updateCurrentMeasureVisual() {
     if (isComplete) {
       const levels = [...new Set(indices.map((index) => masteryStates[index]).filter(Boolean))];
       if (levels.length) levels.forEach((level) => tileStatus.append(createMasteryBadge(level)));
-      else tileStatus.textContent = "GIVEN";
+      else localize(tileStatus, "measure.given");
     } else {
-      tileStatus.textContent = "YOUR TURN";
+      localize(tileStatus, "measure.yourTurnLabel");
     }
   }
 }
@@ -1567,13 +1654,20 @@ function renderPieceReview() {
     item.dataset.measureId = event.measure;
     item.dataset.measureIndex = String(groupIndex + 1);
     item.setAttribute("role", "group");
-    item.setAttribute("aria-label", `Chord ${groupIndex + 1} of ${groupedEvents.length}, complete`);
+    localize(item, "measure.aria", {
+      n: groupIndex + 1,
+      total: groupedEvents.length,
+      state: { key: "measure.complete" }
+    }, "aria");
     const label = document.createElement("span");
     label.className = "measure-label";
-    label.textContent = `Chord ${groupIndex + 1} of ${groupedEvents.length}`;
+    localize(label, "measure.label", { n: groupIndex + 1, total: groupedEvents.length });
     const tileScore = document.createElement("div");
     tileScore.className = "tile-score";
-    tileScore.append(image(measureScorePath(event), `${piece.title}, ${event.measure}`));
+    tileScore.append(image(measureScorePath(event), "measure.scoreAlt", "score", {
+      piece: piece.title,
+      measure: event.measure
+    }));
     const completion = document.createElement("span");
     completion.className = "completion-mark";
     indices.forEach((answerIndex, chordIndex) => {
@@ -1618,17 +1712,17 @@ function finishPiece() {
 function renderCompletionResults() {
   const piece = currentPiece();
   const heading = document.createElement("h2");
-  heading.textContent = "Congratulations!";
+  localize(heading, "results.congratulations");
   const questionCount = piece.events.filter(isInteractive).length;
   const correctFirstTry = firstTryCorrect.filter(Boolean).length;
   const actions = document.createElement("div");
   actions.className = "completion-actions";
-  const reviewButton = makeButton("Review score", () => {
+  const reviewButton = makeButton("results.reviewScore", () => {
     const score = stageContent.querySelector(".review-sequence");
     score?.focus({ preventScroll: true });
     score?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth", block: "start" });
   }, "text-action");
-  const continueButton = makeButton("Continue", continueAfterReview, "primary-action");
+  const continueButton = makeButton("practice.continue", continueAfterReview, "primary-action");
   actions.append(
     reviewButton,
     continueButton
@@ -1640,13 +1734,22 @@ function renderCompletionResults() {
   heading.id = "completion-heading";
   const score = document.createElement("p");
   score.className = "completion-score";
-  score.textContent = `${correctFirstTry} of ${questionCount} recognised on first listen`;
+  localize(score, "results.score", {
+    correct: new Intl.NumberFormat(getLanguage()).format(correctFirstTry),
+    total: new Intl.NumberFormat(getLanguage()).format(questionCount)
+  });
   const confusedPair = mostConfusedChordPair(piece);
   results.append(heading, score);
   if (confusedPair) {
     const confusion = document.createElement("p");
     confusion.className = "completion-confusion";
-    confusion.textContent = `You chose ${confusedPair.selected} ${countWord(confusedPair.count)} when it was ${confusedPair.correct}.`;
+    const category = new Intl.PluralRules(getLanguage()).select(confusedPair.count);
+    const variant = confusedPair.count === 2 ? "two" : category;
+    localize(confusion, `results.confusion.${variant}`, {
+      selected: confusedPair.selected,
+      correct: confusedPair.correct,
+      count: new Intl.NumberFormat(getLanguage()).format(confusedPair.count)
+    });
     results.append(confusion);
   }
   const masterySummary = createResultsMasterySummary(piece);
@@ -1667,12 +1770,6 @@ function mostConfusedChordPair(piece) {
   return [...pairs.values()].sort((left, right) => right.count - left.count)[0];
 }
 
-function countWord(count) {
-  if (count === 1) return "once";
-  if (count === 2) return "twice";
-  return `${count} times`;
-}
-
 function createResultsMasterySummary(piece) {
   const summary = document.createElement("ul");
   summary.className = "results-mastery-list";
@@ -1688,7 +1785,7 @@ function createResultsMasterySummary(piece) {
   groups.forEach((group, index) => {
     const item = document.createElement("li");
     const label = document.createElement("span");
-    label.textContent = `Chord ${index + 1}`;
+    localize(label, "results.chord", { n: index + 1 });
     const badges = masteryBadgesFor(group.indices, "results-mastery-badges");
     item.append(label, badges);
     summary.append(item);
@@ -1731,6 +1828,23 @@ function render() {
 }
 
 homeButton.addEventListener("click", returnToHome);
+document.querySelector("#language-switcher").addEventListener("click", (event) => {
+  const button = event.target instanceof Element ? event.target.closest("button[data-lang]") : null;
+  if (!button || button.dataset.lang === getLanguage()) return;
+  const pageScroll = { x: window.scrollX, y: window.scrollY };
+  const sequenceScroll = [...document.querySelectorAll(".score-sequence")].map((sequence) => ({
+    sequence,
+    left: sequence.scrollLeft,
+    top: sequence.scrollTop
+  }));
+  setLanguage(button.dataset.lang);
+  window.scrollTo(pageScroll.x, pageScroll.y);
+  sequenceScroll.forEach(({ sequence, left, top }) => {
+    sequence.scrollLeft = left;
+    sequence.scrollTop = top;
+  });
+  logInteraction("language_change", { lang: getLanguage() });
+});
 window.addEventListener("pointerdown", unlockAudioOnGesture, true);
 window.addEventListener("keydown", unlockAudioOnGesture, true);
 window.addEventListener("keydown", handleKeyboardShortcuts);
